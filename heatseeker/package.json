@@ -2,7 +2,9 @@
   "name": "heatseeker-pro",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"vite --port 5173\"",
     "server": "node server.js",
@@ -10,13 +12,16 @@
     "start": "NODE_ENV=production node server.js"
   },
   "dependencies": {
-    "@tastytrade/api": "^0.5.0",
+    "@dxfeed/dxlink-api": "^0.8.0",
+    "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "isomorphic-ws": "^5.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
