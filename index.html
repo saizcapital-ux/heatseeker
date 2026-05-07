@@ -1,0 +1,50 @@
+import { useState, useEffect } from 'react'
+import { hasSession, startSession } from './api.js'
+import Dashboard from './components/Dashboard.jsx'
+
+const S = {
+  wrap: { minHeight:'100vh', background:'#04080f', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'JetBrains Mono','Courier New',monospace" },
+  box:  { width:400, padding:'32px', background:'rgba(8,16,28,0.95)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:4 },
+  logo: { fontFamily:"'Chakra Petch',sans-serif", fontSize:20, fontWeight:700, letterSpacing:'0.1em', color:'#0aff9d', marginBottom:12 },
+  err:  { fontSize:11, color:'#ff3a5c', marginBottom:10 },
+  hint: { fontSize:10, color:'#334', lineHeight:1.8, marginTop:16 },
+  btn:  { marginTop:16, width:'100%', padding:'9px', background:'rgba(10,255,157,0.1)', border:'1px solid rgba(10,255,157,0.3)', borderRadius:3, color:'#0aff9d', fontFamily:"'Chakra Petch',sans-serif", fontSize:12, fontWeight:600, letterSpacing:'0.08em', cursor:'pointer' }
+}
+
+export default function App () {
+  const [ready,   setReady]   = useState(hasSession())
+  const [loading, setLoading] = useState(!hasSession())
+  const [error,   setError]   = useState('')
+
+  function connect () {
+    setError(''); setLoading(true)
+    startSession()
+      .then(() => setReady(true))
+      .catch(e  => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { if (!ready) connect() }, []) // eslint-disable-line
+
+  if (ready) return <Dashboard onDisconnect={() => { setReady(false); connect() }} />
+
+  return (
+    <div style={S.wrap}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap')`}</style>
+      <div style={S.box}>
+        <div style={S.logo}>HEATSEEKER™</div>
+        {loading && <div style={{ fontSize:11, color:'#445' }}>Authenticating with Tastytrade...</div>}
+        {error && <>
+          <div style={S.err}>⚠ {error}</div>
+          <div style={{ fontSize:11, color:'#c8d8e8', lineHeight:1.7 }}>
+            Make sure these are set in Railway → Variables:
+          </div>
+          <div style={S.hint}>
+            TT_CLIENT_ID<br/>TT_CLIENT_SECRET<br/>TT_REFRESH_TOKEN
+          </div>
+          <button style={S.btn} onClick={connect}>RETRY</button>
+        </>}
+      </div>
+    </div>
+  )
+}
