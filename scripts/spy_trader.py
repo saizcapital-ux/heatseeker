@@ -225,4 +225,17 @@ def main():
     print("\n" + "="*60)
     print(f"HEATSEEKER MORNING SIGNAL - {expiration}")
     print("="*60)
-    print(f"  Account:     {ACCOUNT_NUMB
+    print(f"  Account:     {ACCOUNT_NUMBER} (agentic)")
+    print(f"  SPY spot:    ${spot:.2f}  (prev close ${prev_close:.2f})")
+    print(f"  VIX:         {vix:.2f}")
+    print(f"  King node:   {king_strike}  (GEX ${king_gex/1e6:.2f}M)")
+    print(f"  Direction:   {direction.upper()}")
+    print(f"  Trade:       BUY {qty}x {symbol} {entry_strike}{direction[0].upper()} @ ${entry_ask:.2f}")
+    print(f"  Total cost:  ${total_cost:.2f}")
+    print(f"  Stop loss:   ${total_cost*0.5:.2f}  (-50%)")
+    print(f"  Target:      ${total_cost*2:.2f}  (+100%)")
+    print(f"  Status:      {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
+    print("="*60)
+
+if __name__ == "__main__":
+    main()
