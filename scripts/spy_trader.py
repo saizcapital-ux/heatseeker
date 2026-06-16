@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HEATSEEKER Morning SPY Regime Trader
+HEATSEEKER™ Morning SPY Regime Trader
 Runs at market open, computes 0DTE GEX regime, places 1 high-probability call.
 
 Regime rules:
@@ -33,16 +33,21 @@ DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 ACCOUNT_NUMBER = os.getenv("RH_ACCOUNT_NUMBER", "634079917")
 STRIKE_WINDOW  = 15
 
-
 def net_gex(oi, gamma, spot, is_call):
     sign = 1 if is_call else -1
     return sign * oi * gamma * spot * 100
 
 
 def login():
-    user = os.environ["RH_USERNAME"]
-    pwd  = os.environ["RH_PASSWORD"]
+    user = os.getenv("RH_USERNAME", "")
+    pwd  = os.getenv("RH_PASSWORD", "")
     mfa  = os.getenv("RH_MFA_CODE", "")
+    if not user or not pwd:
+        log.error(
+            "RH_USERNAME and RH_PASSWORD must be set as GitHub Actions secrets.\n"
+            "Go to: github.com/saizcapital-ux/heatseeker/settings/secrets/actions"
+        )
+        sys.exit(1)
     log.info("Logging in to Robinhood...")
     rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=False)
     log.info("Login OK")
@@ -59,7 +64,7 @@ def get_spot_and_prev_close(symbol="SPY"):
     return spot, prev_close
 
 
-def get_atm_strikes(symbol, expiration, spot):
+def get_atm_strikes(symbol, expiration, spot, window=STRIKE_WINDOW):
     calls, puts = [], []
     for opt_type, bucket in [("call", calls), ("put", puts)]:
         opts = rh.options.find_options_by_expiration_and_type(
@@ -68,9 +73,10 @@ def get_atm_strikes(symbol, expiration, spot):
             optionType=opt_type,
         )
         for o in opts:
-            if abs(float(o["strike_price"]) - spot) <= STRIKE_WINDOW:
+            strike = float(o["strike_price"])
+            if abs(strike - spot) <= window:
                 bucket.append(o)
-    log.info(f"Found {len(calls)} calls and {len(puts)} puts within +/-${STRIKE_WINDOW}")
+    log.info(f"Found {len(calls)} calls and {len(puts)} puts within +/-${window} of spot")
     return calls, puts
 
 
@@ -90,6 +96,7 @@ def fetch_greeks(instruments):
         o["open_interest"] = int(md.get("open_interest", 0) or 0)
         o["ask_price"]     = float(md.get("ask_price", 0) or 0)
         o["bid_price"]     = float(md.get("bid_price", 0) or 0)
+        o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
 
 
 def compute_gex_nodes(calls, puts, spot):
@@ -108,10 +115,11 @@ def compute_gex_nodes(calls, puts, spot):
 def find_king(nodes):
     if not nodes:
         return None, 0
-    return max(nodes, key=lambda x: abs(x[1]))
+    king_strike, king_gex = max(nodes, key=lambda x: abs(x[1]))
+    return king_strike, king_gex
 
 
-def find_entry_contract(calls, king_strike, max_spend=MAX_SPEND):
+def find_entry_contract(calls, king_strike, spot, max_spend=MAX_SPEND):
     target     = king_strike + 1
     candidates = sorted(calls, key=lambda o: float(o["strike_price"]))
     for delta in [0, -1, 1, -2, 2]:
@@ -124,18 +132,19 @@ def find_entry_contract(calls, king_strike, max_spend=MAX_SPEND):
     return None
 
 
-def place_order(contract, expiration):
+def place_order(contract, expiration, dry_run=DRY_RUN):
     symbol      = contract["chain_symbol"]
     strike      = float(contract["strike_price"])
-    limit_price = round(contract["ask_price"], 2)
+    ask         = contract["ask_price"]
+    limit_price = round(ask, 2)
 
     log.info(
-        f"{'[DRY RUN] ' if DRY_RUN else ''}ORDER: BUY 1x {symbol} {strike}C "
+        f"{'[DRY RUN] ' if dry_run else ''}ORDER: BUY 1x {symbol} {strike}C "
         f"exp={expiration}  limit=${limit_price:.2f}  cost=${limit_price*100:.2f}"
     )
 
-    if DRY_RUN:
-        log.info("DRY_RUN=true -- order not submitted")
+    if dry_run:
+        log.info("DRY_RUN=true - order not submitted")
         return {"dry_run": True, "strike": strike, "limit": limit_price}
 
     order = rh.orders.order_buy_option_limit(
@@ -165,14 +174,14 @@ def main():
 
     if spot < prev_close - 0.50:
         log.warning(
-            f"REGIME: BEARISH -- SPY {spot:.2f} is ${prev_close - spot:.2f} below prev close "
-            f"{prev_close:.2f}. No trade today."
+            f"REGIME: BEARISH - SPY {spot:.2f} is below prev close {prev_close:.2f}. No trade today."
         )
         sys.exit(0)
 
-    log.info(f"REGIME: BULL/NEUT -- SPY at ${spot:.2f}, prev close ${prev_close:.2f}")
+    log.info(f"REGIME: BULL/NEUT - SPY {spot:.2f} >= prev close {prev_close:.2f}")
 
     calls, puts = get_atm_strikes(symbol, expiration, spot)
+
     if not calls:
         log.error("No call options found near ATM. Aborting.")
         sys.exit(1)
@@ -184,30 +193,26 @@ def main():
     king_strike, king_gex = find_king(nodes)
     log.info(f"KING NODE: {king_strike}  GEX=${king_gex/1e6:.2f}M")
 
-    top5 = sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5]
-    log.info("Top GEX: " + "  ".join(f"{s}=${g/1e6:.1f}M" for s, g in top5))
+    top_nodes = sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5]
+    log.info("Top GEX nodes: " + "  ".join(f"{s}=${g/1e6:.1f}M" for s, g in top_nodes))
 
-    contract = find_entry_contract(calls, king_strike)
+    contract = find_entry_contract(calls, king_strike, spot, MAX_SPEND)
+
     if not contract:
-        log.warning(f"No affordable call within ${MAX_SPEND} near king {king_strike}. Skip.")
+        log.warning(f"No affordable call found within ${MAX_SPEND} near king {king_strike}. Skipping.")
         sys.exit(0)
 
     entry_strike = float(contract["strike_price"])
     entry_ask    = contract["ask_price"]
     log.info(f"ENTRY: {symbol} {entry_strike}C  ask=${entry_ask:.2f}  cost=${entry_ask*100:.2f}")
 
-    result = place_order(contract, expiration)
+    place_order(contract, expiration)
 
     print("\n" + "="*60)
-    print(f"HEATSEEKER MORNING SIGNAL -- {expiration}")
+    print(f"HEATSEEKER MORNING SIGNAL - {expiration}")
     print("="*60)
     print(f"  SPY spot:    ${spot:.2f}  (prev close ${prev_close:.2f})")
     print(f"  King node:   {king_strike}  (GEX ${king_gex/1e6:.2f}M)")
     print(f"  Trade:       BUY 1x {symbol} {entry_strike}C  @ ${entry_ask:.2f}")
     print(f"  Max loss:    ${entry_ask*100:.2f}")
-    print(f"  Status:      {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
-    print("="*60)
-
-
-if __name__ == "__main__":
-    main()
+    print(f"  Status:
