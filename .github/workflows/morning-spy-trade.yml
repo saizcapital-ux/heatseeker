@@ -2,7 +2,6 @@ name: Morning SPY Trade
 
 on:
   schedule:
-    # 9:31 AM ET = 13:31 UTC, Mon-Fri
     - cron: "31 13 * * 1-5"
   workflow_dispatch:
     inputs:
