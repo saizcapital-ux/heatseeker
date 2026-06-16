@@ -2,7 +2,7 @@ name: Morning SPY Trade
 
 on:
   schedule:
-    - - cron: "45 13 * * 1-5"
+    - cron: "45 13 * * 1-5"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -33,6 +33,5 @@ jobs:
           RH_PASSWORD:        ${{ secrets.RH_PASSWORD }}
           RH_MFA_CODE:        ${{ secrets.RH_MFA_CODE }}
           RH_ACCOUNT_NUMBER:  "634079917"
-          MAX_SPEND:          "50"
           DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
         run: python scripts/spy_trader.py
