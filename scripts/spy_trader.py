@@ -2,6 +2,7 @@
 import os, sys, json, logging
 from datetime import date
 import robin_stocks.robinhood as rh
+from scripts.journal import get_smart_size, log_entry, print_dashboard
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 log = logging.getLogger("heatseeker")
@@ -41,14 +42,6 @@ def get_account_balance():
     except Exception as e:
         log.warning(f"Could not fetch balance: {e}")
     return 50.0
-
-def get_position_size(balance):
-    if balance < 150:    return 1, min(balance * 0.9, 50)
-    elif balance < 500:  return 3, min(balance * 0.25, 150)
-    elif balance < 1500: return 10, min(balance * 0.25, 500)
-    else:
-        spend = balance * 0.15
-        return max(1, int(spend / 50)), spend
 
 def get_vix():
     try:
@@ -151,8 +144,13 @@ def main():
     if vix > VIX_MAX: log.warning(f"VIX {vix:.2f} too high. Skipping."); sys.exit(0)
 
     balance = get_account_balance()
-    max_contracts, max_spend = get_position_size(balance)
-    log.info(f"Sizing: ${balance:.2f} -> {max_contracts} contracts, ${max_spend:.2f} max")
+    print_dashboard(balance)
+
+    max_contracts, max_spend = get_smart_size(balance)
+    if max_contracts == 0:
+        log.warning("Smart sizer returned 0 contracts (losing streak protection). Skipping today.")
+        sys.exit(0)
+    log.info(f"SmartSize: ${balance:.2f} -> {max_contracts} contracts, ${max_spend:.2f} max spend")
 
     spot, prev_close = get_spot_and_prev_close(symbol)
     calls, puts = get_atm_strikes(symbol, expiration, spot)
@@ -185,7 +183,18 @@ def main():
     qty   = contract["_contracts"]
     ask   = contract["ask_price"]
     total = ask * 100 * qty
+
     place_order(contract, expiration, direction, qty)
+
+    # Log entry to journal
+    if not DRY_RUN:
+        log_entry(
+            symbol=symbol, opt_type=direction,
+            strike=float(contract["strike_price"]), expiry=expiration,
+            contracts=qty, entry_price=ask,
+            vix=vix, king_strike=king_strike, king_gex=king_gex,
+            direction=direction, balance_before=balance,
+        )
 
     print("\n" + "="*60)
     print(f"HEATSEEKER MORNING SIGNAL - {expiration}")
@@ -198,7 +207,7 @@ def main():
     print(f"  Trade:      BUY {qty}x {symbol} {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}")
     print(f"  Total cost: ${total:.2f}")
     print(f"  Stop loss:  ${total*0.5:.2f}  (-50%)")
-    print(f"  Target:     ${total*2:.2f}  (+100%)")
+    print(f"  Trail stop: activates at ${total*2:.2f}  (+100%), trails 25% from peak")
     print(f"  Status:     {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
     print("="*60)
 

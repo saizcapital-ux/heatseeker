@@ -2,6 +2,7 @@
 import os, sys, json, logging
 from datetime import date
 import robin_stocks.robinhood as rh
+from scripts.journal import log_exit, load as load_journal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 log = logging.getLogger("heatseeker.exit")
@@ -159,6 +160,14 @@ def main():
             close_position(p, max(round(bid, 2), 0.01))
             if key in state:
                 del state[key]
+            # Log exit to journal
+            if not DRY_RUN:
+                try:
+                    trade_id = f"{today}_{p['strike']}_{p['opt_type']}"
+                    balance_after = avg + (mark - avg)  # rough; actual will be fetched next run
+                    log_exit(trade_id, mark, reason, balance_after)
+                except Exception as je:
+                    log.warning(f"Journal exit log failed (non-fatal): {je}")
         elif not reason and not state.get(key, {}).get("activated") and pnl_pct < TRAIL_ACTIVATE:
             log.info("ACTION: HOLD")
             print(f"  --> HOLD")
