@@ -60,7 +60,8 @@ def _git_push():
 # ── Log helpers ───────────────────────────────────────────────────────────────
 
 def log_entry(symbol, opt_type, strike, expiry, contracts, entry_price,
-              vix, king_strike, king_gex, direction, balance_before):
+              vix, king_strike, king_gex, direction, balance_before,
+              gex_features=None, confidence=None):
     data = load()
     trade = {
         "id":             f"{date.today()}_{strike}_{opt_type}",
@@ -82,6 +83,8 @@ def log_entry(symbol, opt_type, strike, expiry, contracts, entry_price,
         "direction":      direction,
         "balance_before": round(balance_before, 2),
         "balance_after":  None,
+        "gex_features":   gex_features,
+        "confidence":     round(confidence, 3) if confidence else None,
     }
     data["trades"].append(trade)
     save(data)

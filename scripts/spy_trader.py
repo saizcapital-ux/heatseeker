@@ -3,6 +3,8 @@ import os, sys, json, logging
 from datetime import date
 import robin_stocks.robinhood as rh
 from scripts.journal import get_smart_size, log_entry, print_dashboard
+from scripts.gex_study import (extract_gex_features, gex_confidence_score,
+                                print_dealer_flow, print_pattern_report)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 log = logging.getLogger("heatseeker")
@@ -176,6 +178,21 @@ def main():
     if direction == "put" and spot > prev_close + 0.50:
         log.warning("GEX=PUT but bullish. Skipping."); sys.exit(0)
 
+    # GEX pattern study — dealer flow analysis + confidence score
+    gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+    confidence, reasons = gex_confidence_score(gex_features, direction)
+    print_dealer_flow(gex_features, spot, vix, direction, confidence, reasons)
+    print_pattern_report()
+
+    # Low confidence → skip (below 35% the setup is structurally weak)
+    if confidence < 0.35:
+        log.warning(f"GEX confidence {confidence*100:.0f}% too low. Skipping."); sys.exit(0)
+
+    # Scale down max_spend by confidence (e.g. 60% confidence → use 60% of Kelly spend)
+    max_spend = round(max_spend * confidence, 2)
+    max_spend = max(10.0, max_spend)
+    log.info(f"Confidence-adjusted spend: ${max_spend:.2f}")
+
     contract = find_entry_contract(pool, target, max_spend, max_contracts)
     if not contract:
         log.warning(f"No affordable {direction} near {target}. Skipping."); sys.exit(0)
@@ -186,7 +203,7 @@ def main():
 
     place_order(contract, expiration, direction, qty)
 
-    # Log entry to journal
+    # Log entry to journal (includes GEX features for pattern learning)
     if not DRY_RUN:
         log_entry(
             symbol=symbol, opt_type=direction,
@@ -194,6 +211,7 @@ def main():
             contracts=qty, entry_price=ask,
             vix=vix, king_strike=king_strike, king_gex=king_gex,
             direction=direction, balance_before=balance,
+            gex_features=gex_features, confidence=confidence,
         )
 
     print("\n" + "="*60)
@@ -208,6 +226,7 @@ def main():
     print(f"  Total cost: ${total:.2f}")
     print(f"  Stop loss:  ${total*0.5:.2f}  (-50%)")
     print(f"  Trail stop: activates at ${total*2:.2f}  (+100%), trails 25% from peak")
+    print(f"  GEX Conf:   {confidence*100:.0f}%  (size scaled accordingly)")
     print(f"  Status:     {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
     print("="*60)
 
