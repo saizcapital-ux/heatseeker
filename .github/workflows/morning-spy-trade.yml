@@ -2,7 +2,7 @@ name: Morning SPY Trade
 
 on:
   schedule:
-    - cron: "31 13 * * 1-5"
+    - - cron: "45 13 * * 1-5"
   workflow_dispatch:
     inputs:
       dry_run:
