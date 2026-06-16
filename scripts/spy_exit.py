@@ -11,7 +11,7 @@ log = logging.getLogger("heatseeker.exit")
 
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 FORCE_CLOSE    = os.getenv("FORCE_CLOSE", "false").lower() == "true"
-ACCOUNT_NUMBER = os.getenv("RH_ACCOUNT_NUMBER", "634079917")
+ACCOUNT_NUMBER = "634079917"
 PROFIT_TARGET  = 1.00
 STOP_LOSS      = -0.50
 
@@ -45,11 +45,9 @@ def get_spy_0dte_positions():
             continue
         if not instrument:
             continue
-        chain = instrument.get("chain_symbol", "")
-        expiration = instrument.get("expiration_date", "")
-        if chain == "SPY" and expiration == today:
+        if instrument.get("chain_symbol") == "SPY" and instrument.get("expiration_date") == today:
             p["instrument"] = instrument
-            p["expiration"] = expiration
+            p["expiration"] = today
             p["opt_type"]   = instrument.get("type", "call")
             p["strike"]     = float(instrument.get("strike_price", 0))
             p["qty"]        = int(qty)
@@ -57,14 +55,10 @@ def get_spy_0dte_positions():
     return spy_0dte
 
 def get_current_price(position):
-    instrument_url = position.get("option")
     try:
-        md = rh.options.get_option_market_data_by_url(instrument_url)
+        md = rh.options.get_option_market_data_by_url(position.get("option"))
         if md:
-            bid  = float(md.get("bid_price", 0) or 0)
-            ask  = float(md.get("ask_price", 0) or 0)
-            mark = float(md.get("adjusted_mark_price", 0) or 0)
-            return bid, ask, mark
+            return float(md.get("bid_price", 0) or 0), float(md.get("ask_price", 0) or 0), float(md.get("adjusted_mark_price", 0) or 0)
     except Exception:
         pass
     return 0.0, 0.0, 0.0
@@ -77,7 +71,7 @@ def close_position(position, limit_price):
     symbol     = position["instrument"].get("chain_symbol", "SPY")
     log.info(f"{'[DRY RUN] ' if DRY_RUN else ''}CLOSE: SELL {qty}x {symbol} {strike}{opt_type[0].upper()} exp={expiration} limit=${limit_price:.2f}")
     if DRY_RUN:
-        log.info("DRY_RUN=true - close order not submitted")
+        log.info("DRY_RUN=true - close not submitted")
         return {"dry_run": True}
     order = rh.orders.order_sell_option_limit(
         positionEffect="close", creditOrDebit="credit", price=limit_price,
@@ -91,12 +85,14 @@ def close_position(position, limit_price):
 def main():
     login()
     today = date.today().strftime("%Y-%m-%d")
-    log.info(f"Exit check: {today}  FORCE_CLOSE={FORCE_CLOSE}")
+    log.info(f"Exit check: {today}  FORCE_CLOSE={FORCE_CLOSE}  Account={ACCOUNT_NUMBER}")
+
     positions = get_spy_0dte_positions()
 
     print("\n" + "="*60)
     print(f"HEATSEEKER EXIT CHECK - {today}")
     print("="*60)
+    print(f"  Account: {ACCOUNT_NUMBER} (agentic)")
 
     if not positions:
         log.info("No open SPY 0DTE positions. Nothing to do.")
