@@ -182,8 +182,26 @@ def main():
         log.error("No options found near ATM. Aborting.")
         sys.exit(1)
 
-    fetch_greeks(calls)
-    fetch_greeks(puts)
+   def fetch_greeks(instruments):
+    ids = [o["id"] for o in instruments]
+    if not ids:
+        return
+    for i in range(0, len(ids), 20):
+        batch = ids[i:i+20]
+        market_data = rh.options.get_option_market_data_by_id(batch)
+        data_by_id = {}
+        if isinstance(market_data, list):
+            for item in market_data:
+                if item:
+                    data_by_id[item.get("instrument_id", "")] = item
+        for o in instruments:
+            if o["id"] in data_by_id:
+                md = data_by_id[o["id"]]
+                o["gamma"]         = float(md.get("gamma", 0) or 0)
+                o["open_interest"] = int(md.get("open_interest", 0) or 0)
+                o["ask_price"]     = float(md.get("ask_price", 0) or 0)
+                o["bid_price"]     = float(md.get("bid_price", 0) or 0)
+                o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
 
     nodes = compute_gex_nodes(calls, puts, spot)
     king_strike, king_gex = find_king(nodes)
