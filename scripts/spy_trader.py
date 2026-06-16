@@ -49,8 +49,7 @@ def get_position_size(balance):
         return 10, min(balance * 0.25, 500)
     else:
         spend = balance * 0.15
-        contracts = max(1, int(spend / 50))
-        return contracts, spend
+        return max(1, int(spend / 50)), spend
 
 def get_vix():
     try:
@@ -59,10 +58,12 @@ def get_vix():
             vix = float(data[0].get("last_trade_price", 0) or 0)
             if vix == 0:
                 vix = float(data[0].get("last_extended_hours_trade_price", 0) or 0)
-            log.info(f"VIX: {vix:.2f}")
-            return vix
-    except Exception as e:
-        log.warning(f"Could not fetch VIX: {e}")
+            if vix > 0:
+                log.info(f"VIX: {vix:.2f}")
+                return vix
+    except Exception:
+        pass
+    log.warning("VIX unavailable - defaulting to 15.0")
     return 15.0
 
 def get_spot_and_prev_close(symbol="SPY"):
@@ -94,12 +95,14 @@ def fetch_greeks(instruments):
     ids = [o["id"] for o in instruments]
     if not ids:
         return
-    market_data = rh.options.get_option_market_data_by_id(ids)
     data_by_id = {}
-    if isinstance(market_data, list):
-        for item in market_data:
-            if item:
-                data_by_id[item.get("instrument_id", "")] = item
+    for i in range(0, len(ids), 20):
+        batch = ids[i:i+20]
+        market_data = rh.options.get_option_market_data_by_id(batch)
+        if isinstance(market_data, list):
+            for item in market_data:
+                if item:
+                    data_by_id[item.get("instrument_id", "")] = item
     for o in instruments:
         md = data_by_id.get(o["id"], {})
         o["gamma"]         = float(md.get("gamma", 0) or 0)
@@ -182,26 +185,8 @@ def main():
         log.error("No options found near ATM. Aborting.")
         sys.exit(1)
 
-   def fetch_greeks(instruments):
-    ids = [o["id"] for o in instruments]
-    if not ids:
-        return
-    for i in range(0, len(ids), 20):
-        batch = ids[i:i+20]
-        market_data = rh.options.get_option_market_data_by_id(batch)
-        data_by_id = {}
-        if isinstance(market_data, list):
-            for item in market_data:
-                if item:
-                    data_by_id[item.get("instrument_id", "")] = item
-        for o in instruments:
-            if o["id"] in data_by_id:
-                md = data_by_id[o["id"]]
-                o["gamma"]         = float(md.get("gamma", 0) or 0)
-                o["open_interest"] = int(md.get("open_interest", 0) or 0)
-                o["ask_price"]     = float(md.get("ask_price", 0) or 0)
-                o["bid_price"]     = float(md.get("bid_price", 0) or 0)
-                o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
+    fetch_greeks(calls)
+    fetch_greeks(puts)
 
     nodes = compute_gex_nodes(calls, puts, spot)
     king_strike, king_gex = find_king(nodes)
