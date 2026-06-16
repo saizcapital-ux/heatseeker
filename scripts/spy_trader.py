@@ -165,4 +165,76 @@ def main():
 
     vix = get_vix()
     if vix < VIX_MIN:
-        log.warning(f"VIX {vix:.2f} too
+        log.warning(f"VIX {vix:.2f} too low - no premium. Skipping.")
+        sys.exit(0)
+    if vix > VIX_MAX:
+        log.warning(f"VIX {vix:.2f} too high - too chaotic. Skipping.")
+        sys.exit(0)
+    log.info(f"VIX {vix:.2f} is tradeable")
+
+    balance = get_account_balance()
+    max_contracts, max_spend = get_position_size(balance)
+    log.info(f"Sizing: balance=${balance:.2f} -> {max_contracts} contracts, ${max_spend:.2f} max spend")
+
+    spot, prev_close = get_spot_and_prev_close(symbol)
+    calls, puts = get_atm_strikes(symbol, expiration, spot)
+    if not calls and not puts:
+        log.error("No options found near ATM. Aborting.")
+        sys.exit(1)
+
+    fetch_greeks(calls)
+    fetch_greeks(puts)
+
+    nodes = compute_gex_nodes(calls, puts, spot)
+    king_strike, king_gex = find_king(nodes)
+    log.info(f"KING NODE: {king_strike}  GEX=${king_gex/1e6:.2f}M")
+
+    top_nodes = sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5]
+    log.info("Top GEX nodes: " + "  ".join(f"{s}=${g/1e6:.1f}M" for s, g in top_nodes))
+
+    if king_gex >= 0:
+        direction   = "call"
+        target      = king_strike + 1
+        option_pool = calls
+        log.info(f"DIRECTION: CALL (GEX +${king_gex/1e6:.1f}M) -> target {target}")
+    else:
+        direction   = "put"
+        target      = king_strike - 1
+        option_pool = puts
+        log.info(f"DIRECTION: PUT (GEX -${abs(king_gex)/1e6:.1f}M) -> target {target}")
+
+    if direction == "call" and spot < prev_close - 0.50:
+        log.warning("GEX=CALL but price is bearish. Signals conflict - skipping.")
+        sys.exit(0)
+    if direction == "put" and spot > prev_close + 0.50:
+        log.warning("GEX=PUT but price is bullish. Signals conflict - skipping.")
+        sys.exit(0)
+
+    contract = find_entry_contract(option_pool, target, max_spend, max_contracts)
+    if not contract:
+        log.warning(f"No affordable {direction} near {target} within ${max_spend:.0f}. Skipping.")
+        sys.exit(0)
+
+    entry_strike = float(contract["strike_price"])
+    entry_ask    = contract["ask_price"]
+    qty          = contract["_contracts"]
+    total_cost   = entry_ask * 100 * qty
+
+    place_order(contract, expiration, direction, qty)
+
+    print("\n" + "="*60)
+    print(f"HEATSEEKER MORNING SIGNAL - {expiration}")
+    print("="*60)
+    print(f"  SPY spot:    ${spot:.2f}  (prev close ${prev_close:.2f})")
+    print(f"  VIX:         {vix:.2f}")
+    print(f"  King node:   {king_strike}  (GEX ${king_gex/1e6:.2f}M)")
+    print(f"  Direction:   {direction.upper()}")
+    print(f"  Trade:       BUY {qty}x {symbol} {entry_strike}{direction[0].upper()} @ ${entry_ask:.2f}")
+    print(f"  Total cost:  ${total_cost:.2f}")
+    print(f"  Stop loss:   ${total_cost*0.5:.2f}  (-50%)")
+    print(f"  Target:      ${total_cost*2:.2f}  (+100%)")
+    print(f"  Status:      {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
+    print("="*60)
+
+if __name__ == "__main__":
+    main()
