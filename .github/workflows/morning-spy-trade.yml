@@ -1,18 +1,29 @@
-name: Morning SPY Trade
+name: HEATSEEKER SPY Trader
 
 on:
   schedule:
-    - cron: "45 13 * * 1-5"
+    - cron: "45 13 * * 1-5"   # 9:45 AM ET  - Entry
+    - cron: "0 15 * * 1-5"    # 11:00 AM ET - Exit check
+    - cron: "0 17 * * 1-5"    # 1:00 PM ET  - Exit check
+    - cron: "45 19 * * 1-5"   # 3:45 PM ET  - Force close
   workflow_dispatch:
     inputs:
+      action:
+        description: "entry or exit"
+        required: false
+        default: "entry"
       dry_run:
         description: "Dry run (no real orders)"
         required: false
         default: "true"
+      force_close:
+        description: "Force close all open positions"
+        required: false
+        default: "false"
 
 jobs:
   trade:
-    name: Run GEX Regime + Place Order
+    name: HEATSEEKER
     runs-on: ubuntu-latest
 
     steps:
@@ -27,7 +38,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Run trader
+      - name: Entry (9:45 AM ET)
+        if: >
+          (github.event_name == 'schedule' && github.event.schedule == '45 13 * * 1-5') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'entry')
         env:
           RH_USERNAME:        ${{ secrets.RH_USERNAME }}
           RH_PASSWORD:        ${{ secrets.RH_PASSWORD }}
@@ -35,3 +49,29 @@ jobs:
           RH_ACCOUNT_NUMBER:  "634079917"
           DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
         run: python scripts/spy_trader.py
+
+      - name: Exit check (11 AM + 1 PM)
+        if: >
+          (github.event_name == 'schedule' && (github.event.schedule == '0 15 * * 1-5' || github.event.schedule == '0 17 * * 1-5')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'exit')
+        env:
+          RH_USERNAME:        ${{ secrets.RH_USERNAME }}
+          RH_PASSWORD:        ${{ secrets.RH_PASSWORD }}
+          RH_MFA_CODE:        ${{ secrets.RH_MFA_CODE }}
+          RH_ACCOUNT_NUMBER:  "634079917"
+          DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
+          FORCE_CLOSE:        "false"
+        run: python scripts/spy_exit.py
+
+      - name: Force close (3:45 PM ET)
+        if: >
+          (github.event_name == 'schedule' && github.event.schedule == '45 19 * * 1-5') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.force_close == 'true')
+        env:
+          RH_USERNAME:        ${{ secrets.RH_USERNAME }}
+          RH_PASSWORD:        ${{ secrets.RH_PASSWORD }}
+          RH_MFA_CODE:        ${{ secrets.RH_MFA_CODE }}
+          RH_ACCOUNT_NUMBER:  "634079917"
+          DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
+          FORCE_CLOSE:        "true"
+        run: python scripts/spy_exit.py
