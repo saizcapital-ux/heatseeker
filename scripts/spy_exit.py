@@ -9,8 +9,25 @@ log = logging.getLogger("heatseeker.exit")
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 FORCE_CLOSE    = os.getenv("FORCE_CLOSE", "false").lower() == "true"
 ACCOUNT_NUMBER = "634079917"
-PROFIT_TARGET  = 1.00
 STOP_LOSS      = -0.50
+TRAIL_ACTIVATE = 1.00   # trailing stop kicks in at +100%
+TRAIL_DROP     = 0.25   # sell if price falls 25% from peak
+
+STATE_FILE = "/tmp/heatseeker_trail.json"
+
+def load_state():
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_state(state):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f)
+    except Exception as e:
+        log.warning(f"Could not save trail state: {e}")
 
 def login():
     user = os.getenv("RH_USERNAME", "")
@@ -78,39 +95,76 @@ def close_position(position, limit_price):
     log.info(f"Close order: {json.dumps(order, indent=2)}")
     return order
 
+def position_key(p):
+    return f"{p['expiration']}_{p['strike']}_{p['opt_type']}"
+
 def main():
     login()
     today = date.today().strftime("%Y-%m-%d")
     log.info(f"Exit check: {today}  FORCE_CLOSE={FORCE_CLOSE}")
+
+    state = load_state()
+    # Clear stale state from prior trading days
+    state = {k: v for k, v in state.items() if k.startswith(today)}
+
     positions = get_spy_0dte_positions()
     print("\n" + "="*60)
     print(f"HEATSEEKER EXIT CHECK - {today}")
     print("="*60)
     print(f"  Account: {ACCOUNT_NUMBER} (agentic)")
+
     if not positions:
         log.info("No open SPY 0DTE positions.")
         print("  No open positions.")
         print("="*60)
+        save_state(state)
         return
+
     for p in positions:
         avg  = float(p.get("average_price", 0) or 0)
         bid, ask, mark = get_current_price(p)
         pnl_pct = (mark - avg) / avg if avg > 0 else 0
         pnl_usd = (mark - avg) * p["qty"] * 100
+        key     = position_key(p)
+
         log.info(f"POSITION: SPY {p['strike']}{p['opt_type'][0].upper()} qty={p['qty']} avg=${avg:.2f} mark=${mark:.2f} P&L={pnl_pct*100:+.1f}% (${pnl_usd:+.2f})")
         print(f"  SPY {p['strike']}{p['opt_type'][0].upper()}: avg=${avg:.2f} mark=${mark:.2f} P&L={pnl_pct*100:+.1f}% (${pnl_usd:+.2f})")
+
         reason = ""
-        if FORCE_CLOSE:                reason = "FORCE CLOSE (3:45 PM ET)"
-        elif pnl_pct >= PROFIT_TARGET: reason = f"PROFIT TARGET ({pnl_pct*100:.0f}%)"
-        elif pnl_pct <= STOP_LOSS:     reason = f"STOP LOSS ({pnl_pct*100:.0f}%)"
+
+        if FORCE_CLOSE:
+            reason = "FORCE CLOSE (3:45 PM ET)"
+
+        elif pnl_pct >= TRAIL_ACTIVATE or state.get(key, {}).get("activated"):
+            # Update high-water mark
+            prev_high = state.get(key, {}).get("high", 0)
+            new_high  = max(mark, prev_high)
+            state[key] = {"high": new_high, "activated": True}
+            trail_stop = new_high * (1 - TRAIL_DROP)
+
+            log.info(f"TRAILING STOP active: peak=${new_high:.2f}  trail_stop=${trail_stop:.2f}  mark=${mark:.2f}")
+
+            if mark <= trail_stop:
+                reason = f"TRAILING STOP HIT (peak=${new_high:.2f}, dropped {TRAIL_DROP*100:.0f}% to ${mark:.2f})"
+            else:
+                pct_from_peak = (new_high - mark) / new_high * 100
+                print(f"  --> TRAILING STOP ACTIVE: peak=${new_high:.2f}  stop=${trail_stop:.2f}  now={pct_from_peak:.1f}% below peak — HOLD")
+
+        elif pnl_pct <= STOP_LOSS:
+            reason = f"STOP LOSS ({pnl_pct*100:.0f}%)"
+
         if reason:
             log.info(f"ACTION: {reason} - CLOSING")
             print(f"  --> {reason} - CLOSING")
             close_position(p, max(round(bid, 2), 0.01))
-        else:
+            if key in state:
+                del state[key]
+        elif not reason and not state.get(key, {}).get("activated") and pnl_pct < TRAIL_ACTIVATE:
             log.info("ACTION: HOLD")
             print(f"  --> HOLD")
+
     print("="*60)
+    save_state(state)
 
 if __name__ == "__main__":
     main()
