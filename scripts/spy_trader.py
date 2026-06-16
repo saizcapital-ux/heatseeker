@@ -27,7 +27,15 @@ def login():
         sys.exit(1)
     log.info("Logging in to Robinhood...")
     rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=False)
-    log.info("Login OK")
+    try:
+        profile = rh.profiles.load_portfolio_profile()
+        if not profile:
+            raise Exception("empty profile")
+        log.info("Login verified OK")
+    except Exception as e:
+        log.error(f"Login failed - session not authenticated: {e}")
+        log.error("Did you approve the Robinhood notification on your phone?")
+        sys.exit(1)
 
 def get_account_balance():
     try:
@@ -92,24 +100,17 @@ def get_atm_strikes(symbol, expiration, spot):
     return calls, puts
 
 def fetch_greeks(instruments):
-    ids = [o["id"] for o in instruments]
-    if not ids:
-        return
-    data_by_id = {}
-    for i in range(0, len(ids), 20):
-        batch = ids[i:i+20]
-        market_data = rh.options.get_option_market_data_by_id(batch)
-        if isinstance(market_data, list):
-            for item in market_data:
-                if item:
-                    data_by_id[item.get("instrument_id", "")] = item
     for o in instruments:
-        md = data_by_id.get(o["id"], {})
-        o["gamma"]         = float(md.get("gamma", 0) or 0)
-        o["open_interest"] = int(md.get("open_interest", 0) or 0)
-        o["ask_price"]     = float(md.get("ask_price", 0) or 0)
-        o["bid_price"]     = float(md.get("bid_price", 0) or 0)
-        o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
+        try:
+            md_list = rh.options.get_option_market_data_by_id(o["id"])
+            md = md_list[0] if isinstance(md_list, list) and md_list else (md_list or {})
+            o["gamma"]         = float(md.get("gamma", 0) or 0)
+            o["open_interest"] = int(md.get("open_interest", 0) or 0)
+            o["ask_price"]     = float(md.get("ask_price", 0) or 0)
+            o["bid_price"]     = float(md.get("bid_price", 0) or 0)
+            o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
+        except Exception:
+            o["gamma"] = o["open_interest"] = o["ask_price"] = o["bid_price"] = o["mark_price"] = 0
 
 def compute_gex_nodes(calls, puts, spot):
     nodes = {}
@@ -185,6 +186,7 @@ def main():
         log.error("No options found near ATM. Aborting.")
         sys.exit(1)
 
+    log.info("Fetching greeks (this takes ~60 seconds)...")
     fetch_greeks(calls)
     fetch_greeks(puts)
 
