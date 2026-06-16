@@ -1,1 +1,39 @@
+name: Morning SPY Trade
 
+on:
+  schedule:
+    # 9:31 AM ET = 13:31 UTC, Mon-Fri
+    - cron: "31 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no real orders)"
+        required: false
+        default: "true"
+
+jobs:
+  trade:
+    name: Run GEX Regime + Place Order
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run trader
+        env:
+          RH_USERNAME:        ${{ secrets.RH_USERNAME }}
+          RH_PASSWORD:        ${{ secrets.RH_PASSWORD }}
+          RH_MFA_CODE:        ${{ secrets.RH_MFA_CODE }}
+          RH_ACCOUNT_NUMBER:  "634079917"
+          MAX_SPEND:          "50"
+          DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
+        run: python scripts/spy_trader.py
