@@ -145,7 +145,7 @@ def get_stats(n=20):
         else:
             break
 
-    bal_last = closed[-1].get("balance_after") if closed else 50.0
+    bal_last = closed[-1].get("balance_after") if closed else 21.64
     total_pnl = sum(t["pnl_usd"] for t in closed if t["pnl_usd"])
 
     return {
@@ -159,7 +159,7 @@ def get_stats(n=20):
         "total_pnl_usd":    round(total_pnl, 2),
         "best_trade":       max(recent, key=lambda t: t["pnl_pct"] or 0),
         "worst_trade":      min(recent, key=lambda t: t["pnl_pct"] or 0),
-        "goal_progress_pct": round((bal_last or 50) / GOAL * 100, 2) if bal_last else 0,
+        "goal_progress_pct": round((bal_last or 21.64) / GOAL * 100, 2) if bal_last else 0,
     }
 
 

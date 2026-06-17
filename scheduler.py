@@ -43,36 +43,51 @@ def run_exit(force=False):
     except Exception as e:
         log.error(f"Exit error: {e}", exc_info=True)
 
-def refresh_market_data():
-    """Write live SPY price and VIX to gex_state.json every 5 minutes during market hours."""
-    now = datetime.now(ET)
-    weekday = now.weekday()
-    if weekday >= 5:
-        return
-    t = now.hour * 60 + now.minute
-    if t < 570 or t > 960:  # outside 9:30 AM - 4:00 PM ET
-        return
+def _write_gex_update(update: dict):
     try:
-        import yfinance as yf
-        spy_info = yf.Ticker("SPY").fast_info
-        vix_info = yf.Ticker("^VIX").fast_info
-        spot = getattr(spy_info, "last_price", None)
-        vix  = getattr(vix_info, "last_price", None)
-        if spot is None or vix is None:
-            return
-        try:
-            with open(GEX_STATE) as f:
-                state = json.load(f)
-        except Exception:
-            state = {}
-        state["spot"] = round(float(spot), 2)
-        state["vix"]  = round(float(vix), 2)
-        state["market_updated"] = now.strftime("%H:%M:%S ET")
-        with open(GEX_STATE, "w") as f:
-            json.dump(state, f, indent=2)
-        log.info(f"Market refresh: SPY=${spot:.2f}  VIX={vix:.2f}")
+        with open(GEX_STATE) as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+    state.update(update)
+    with open(GEX_STATE, "w") as f:
+        json.dump(state, f, indent=2)
+
+def refresh_market_data():
+    """Write live SPY price, VIX, and Robinhood balance to gex_state.json every 5 minutes."""
+    now = datetime.now(ET)
+    t = now.hour * 60 + now.minute
+    update = {"market_updated": now.strftime("%H:%M:%S ET")}
+
+    # Always refresh balance regardless of market hours
+    try:
+        import robin_stocks.robinhood as rh
+        login = rh.login(os.getenv("ROBINHOOD_USERNAME"), os.getenv("ROBINHOOD_PASSWORD"),
+                         store_session=True, expiresIn=86400)
+        profile = rh.profiles.load_portfolio_profile(account_number="634079917")
+        bp = profile.get("buying_power") or profile.get("withdrawable_amount")
+        if bp:
+            update["account_balance"] = round(float(bp), 2)
+            update["buying_power"]    = round(float(bp), 2)
+            log.info(f"Balance refresh: ${float(bp):.2f}")
     except Exception as e:
-        log.warning(f"Market refresh error: {e}")
+        log.warning(f"Balance refresh error: {e}")
+
+    # Market data only during hours
+    if now.weekday() < 5 and 570 <= t <= 960:
+        try:
+            import yfinance as yf
+            spy_info = yf.Ticker("SPY").fast_info
+            vix_info = yf.Ticker("^VIX").fast_info
+            spot = getattr(spy_info, "last_price", None)
+            vix  = getattr(vix_info, "last_price", None)
+            if spot: update["spot"] = round(float(spot), 2)
+            if vix:  update["vix"]  = round(float(vix), 2)
+            log.info(f"Market refresh: SPY=${spot:.2f}  VIX={vix:.2f}")
+        except Exception as e:
+            log.warning(f"Market data error: {e}")
+
+    _write_gex_update(update)
 
 def main():
     scheduler = BlockingScheduler(timezone=ET)

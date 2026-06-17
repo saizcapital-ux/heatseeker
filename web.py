@@ -69,7 +69,7 @@ def load_journal():
     except Exception:
         return []
 
-def compute_stats(trades):
+def compute_stats(trades, gex_state=None):
     closed   = [t for t in trades if t.get("pnl_pct") is not None]
     recent   = closed[-20:]
     wins     = [t for t in recent if t["pnl_pct"] > 0]
@@ -91,10 +91,14 @@ def compute_stats(trades):
         else:
             break
 
-    balance = 50.0
-    if closed:
-        bal = closed[-1].get("balance_after")
-        if bal: balance = bal
+    # Use live Robinhood balance from gex_state if available, else fall back to journal
+    balance = None
+    if gex_state:
+        balance = gex_state.get("account_balance") or gex_state.get("buying_power")
+    if not balance and closed:
+        balance = closed[-1].get("balance_after")
+    if not balance:
+        balance = 21.64  # actual starting balance from Robinhood
 
     goal_pct = balance / GOAL * 100
 
@@ -153,7 +157,7 @@ def get_next_action():
 def dashboard():
     gex      = load_gex_state()
     trades   = load_journal()
-    stats    = compute_stats(trades)
+    stats    = compute_stats(trades, gex)
     patterns = compute_patterns(trades)
     return render_template(
         "dashboard.html",
@@ -171,9 +175,10 @@ def refresh():
 @app.route("/api/state")
 def api_state():
     trades = load_journal()
+    gex = load_gex_state()
     return jsonify({
-        "gex":     load_gex_state(),
-        "stats":   compute_stats(trades),
+        "gex":     gex,
+        "stats":   compute_stats(trades, gex),
         "journal": trades[-10:],
         "next_action": get_next_action(),
         "ts": datetime.now(ET).strftime("%H:%M:%S ET"),
