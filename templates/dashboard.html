@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEATSEEKER — Live Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6edf3; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; }
+  header { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 16px; letter-spacing: 2px; color: #f78166; }
+  header .meta { color: #8b949e; font-size: 11px; }
+  .grid { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto auto auto; gap: 12px; padding: 12px; }
+  .chart-wrap { grid-column: 1; grid-row: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+  .chart-wrap iframe { display: block; width: 100%; height: 460px; border: none; }
+  .levels { grid-column: 2; grid-row: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
+  .journal { grid-column: 1; grid-row: 2; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
+  .knowledge { grid-column: 2; grid-row: 2; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
+  .status-bar { grid-column: 1 / -1; grid-row: 3; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; display: flex; gap: 24px; align-items: center; }
+  h2 { font-size: 11px; letter-spacing: 1px; color: #8b949e; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  .level-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; }
+  .level-row:last-child { border-bottom: none; }
+  .level-label { color: #8b949e; font-size: 12px; }
+  .level-val { font-size: 13px; font-weight: bold; }
+  .bullish { color: #3fb950; }
+  .bearish { color: #f85149; }
+  .neutral { color: #d29922; }
+  .flat    { color: #8b949e; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .tag-call { background: #1a3a2a; color: #3fb950; border: 1px solid #3fb950; }
+  .tag-put  { background: #3a1a1a; color: #f85149; border: 1px solid #f85149; }
+  .tag-flat { background: #2a2a2a; color: #8b949e; border: 1px solid #30363d; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { color: #8b949e; text-align: left; padding: 4px 8px; border-bottom: 1px solid #30363d; font-weight: normal; }
+  td { padding: 5px 8px; border-bottom: 1px solid #21262d; }
+  tr:last-child td { border-bottom: none; }
+  .win  { color: #3fb950; }
+  .loss { color: #f85149; }
+  .pct  { font-weight: bold; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-box { background: #0d1117; border: 1px solid #30363d; border-radius: 4px; padding: 10px; text-align: center; }
+  .stat-val { font-size: 20px; font-weight: bold; margin-bottom: 2px; }
+  .stat-lbl { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  .pattern-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #21262d; font-size: 11px; }
+  .pattern-row:last-child { border-bottom: none; }
+  .status-item { display: flex; flex-direction: column; }
+  .status-item .lbl { font-size: 10px; color: #8b949e; text-transform: uppercase; margin-bottom: 2px; }
+  .status-item .val { font-size: 13px; font-weight: bold; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+  .dot-green { background: #3fb950; }
+  .dot-yellow { background: #d29922; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .action-banner { background: #1c2128; border: 1px solid #30363d; border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #e6edf3; margin-bottom: 12px; }
+  .bar-wrap { background: #0d1117; border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔥 HEATSEEKER</h1>
+  <div class="meta">
+    Account 634079917 (agentic) &nbsp;|&nbsp;
+    Goal: <strong style="color:#3fb950">${{ "{:,.0f}".format(stats.goal) }}</strong> &nbsp;|&nbsp;
+    <span class="dot dot-green"></span>Live &nbsp;|&nbsp;
+    <span id="clock">--:--:-- ET</span>
+    &nbsp;|&nbsp; <a href="/refresh" style="color:#58a6ff;text-decoration:none">↻ Refresh</a>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- CHART -->
+  <div class="chart-wrap">
+    <iframe
+      src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_spy&symbol=AMEX%3ASPY&interval=5&hidesidetoolbar=0&hidetoptoolbar=0&symboledit=0&saveimage=0&toolbarbg=161b22&theme=dark&style=1&timezone=America%2FNew_York&studies=BB%400%2CMACD%400%2CRSI%400&hideideas=1&locale=en&utm_source=heatseeker"
+      allowtransparency="true" allowfullscreen>
+    </iframe>
+  </div>
+
+  <!-- GEX LEVELS PANEL -->
+  <div class="levels">
+    <h2>📡 Bot Analysis</h2>
+    <div class="action-banner">
+      <span class="dot {% if gex.direction %}dot-green{% else %}dot-yellow{% endif %}"></span>
+      {{ gex.last_action or "Waiting for market open" }}
+    </div>
+
+    <div class="level-row">
+      <span class="level-label">Direction</span>
+      <span>
+        {% if gex.direction == "call" %}<span class="tag tag-call">▲ CALL</span>
+        {% elif gex.direction == "put" %}<span class="tag tag-put">▼ PUT</span>
+        {% else %}<span class="tag tag-flat">— FLAT</span>{% endif %}
+      </span>
+    </div>
+    <div class="level-row">
+      <span class="level-label">GEX Confidence</span>
+      <span class="level-val {% if (gex.confidence or 0) > 0.6 %}bullish{% elif (gex.confidence or 0) > 0.4 %}neutral{% else %}bearish{% endif %}">
+        {{ "{:.0f}%".format((gex.confidence or 0)*100) }}
+      </span>
+    </div>
+    <div class="level-row">
+      <span class="level-label">SPY Price</span>
+      <span class="level-val">${{ "{:.2f}".format(gex.spot or 0) }}</span>
+    </div>
+    <div class="level-row">
+      <span class="level-label">VIX</span>
+      <span class="level-val {% if (gex.vix or 0) < 18 %}bullish{% elif (gex.vix or 0) < 25 %}neutral{% else %}bearish{% endif %}">
+        {{ "{:.2f}".format(gex.vix or 0) }}
+      </span>
+    </div>
+    <div class="level-row">
+      <span class="level-label">IVR</span>
+      <span class="level-val {% if (gex.ivr or 0) < 30 %}bullish{% elif (gex.ivr or 0) < 50 %}neutral{% else %}bearish{% endif %}">
+        {{ gex.ivr or "—" }}
+      </span>
+    </div>
+
+    <div style="margin: 10px 0; border-top: 1px solid #30363d; padding-top: 10px;">
+      <h2 style="margin-bottom:8px">Key Levels</h2>
+      <div class="level-row">
+        <span class="level-label">🟢 Call Wall (resistance)</span>
+        <span class="level-val bullish">${{ "{:.0f}".format(gex.call_wall or 0) if gex.call_wall else "—" }}</span>
+      </div>
+      <div class="level-row">
+        <span class="level-label">⚡ King Node (magnet)</span>
+        <span class="level-val neutral">${{ "{:.0f}".format(gex.king_strike or 0) if gex.king_strike else "—" }}
+          {% if gex.king_gex_m %}<span style="color:#8b949e;font-size:10px">({{ "{:+.1f}M".format(gex.king_gex_m) }})</span>{% endif %}
+        </span>
+      </div>
+      <div class="level-row">
+        <span class="level-label">⚫ Gamma Flip</span>
+        <span class="level-val flat">${{ "{:.0f}".format(gex.gamma_flip or 0) if gex.gamma_flip else "—" }}</span>
+      </div>
+      <div class="level-row">
+        <span class="level-label">🔴 Put Wall (support)</span>
+        <span class="level-val bearish">${{ "{:.0f}".format(gex.put_wall or 0) if gex.put_wall else "—" }}</span>
+      </div>
+    </div>
+
+    {% if gex.direction %}
+    <div style="margin-top:10px">
+      <div style="font-size:10px;color:#8b949e;margin-bottom:4px">GEX CONFIDENCE</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:{{ "{:.0f}".format((gex.confidence or 0)*100) }}%;background:{% if (gex.confidence or 0)>0.6%}#3fb950{% elif (gex.confidence or 0)>0.4%}#d29922{% else%}#f85149{%endif%}"></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- JOURNAL -->
+  <div class="journal">
+    <h2>📒 Trade Journal</h2>
+    {% if not trades %}
+    <div style="color:#8b949e;padding:20px 0;text-align:center">No trades yet — first trade fires at 9:45 AM ET</div>
+    {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Type</th><th>Strike</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in trades|reverse %}
+        <tr>
+          <td>{{ t.date }}</td>
+          <td>
+            {% if t.opt_type == "call" %}<span class="tag tag-call">CALL</span>
+            {% else %}<span class="tag tag-put">PUT</span>{% endif %}
+          </td>
+          <td>${{ t.strike }}</td>
+          <td>${{ "{:.2f}".format(t.entry_price) }}</td>
+          <td>{{ "${:.2f}".format(t.exit_price) if t.exit_price else "OPEN" }}</td>
+          <td class="pct {% if t.pnl_pct is not none %}{% if t.pnl_pct > 0 %}win{% else %}loss{% endif %}{% endif %}">
+            {% if t.pnl_pct is not none %}{{ "{:+.0f}%".format(t.pnl_pct) }}{% else %}—{% endif %}
+          </td>
+          <td style="color:#8b949e;font-size:10px">{{ (t.exit_reason or "")[:20] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- KNOWLEDGE / STATS -->
+  <div class="knowledge">
+    <h2>🧠 Bot Intelligence</h2>
+    <div class="stat-grid" style="margin-bottom:14px">
+      <div class="stat-box">
+        <div class="stat-val {% if stats.win_rate > 0.55 %}bullish{% elif stats.win_rate > 0.4 %}neutral{% else %}bearish{% endif %}">
+          {{ "{:.0f}%".format(stats.win_rate * 100) }}
+        </div>
+        <div class="stat-lbl">Win Rate</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val {% if stats.total_pnl_usd > 0 %}bullish{% else %}bearish{% endif %}">
+          {{ "${:+.2f}".format(stats.total_pnl_usd) }}
+        </div>
+        <div class="stat-lbl">Total P&L</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val neutral">{{ "{:.0f}%".format(stats.kelly * 100) }}</div>
+        <div class="stat-lbl">Kelly Size</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">{{ stats.total_trades }}</div>
+        <div class="stat-lbl">Trades</div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;color:#8b949e;margin-bottom:4px">GOAL PROGRESS ($10,000)</div>
+      <div class="bar-wrap" style="height:12px">
+        <div class="bar-fill" style="width:{{ [stats.goal_progress_pct, 100]|min }}%;background:#3fb950"></div>
+      </div>
+      <div style="font-size:11px;color:#3fb950;margin-top:3px">{{ "{:.2f}%".format(stats.goal_progress_pct) }} complete</div>
+    </div>
+
+    {% if stats.streak_type %}
+    <div class="level-row">
+      <span class="level-label">Current Streak</span>
+      <span class="{% if stats.streak_type == 'win' %}bullish{% else %}bearish{% endif %} level-val">
+        {{ stats.streak }}x {{ stats.streak_type.upper() }}
+      </span>
+    </div>
+    {% endif %}
+    <div class="level-row">
+      <span class="level-label">Avg Win</span>
+      <span class="level-val bullish">+{{ "{:.0f}%".format(stats.avg_win_pct) }}</span>
+    </div>
+    <div class="level-row">
+      <span class="level-label">Avg Loss</span>
+      <span class="level-val bearish">-{{ "{:.0f}%".format(stats.avg_loss_pct) }}</span>
+    </div>
+
+    {% if patterns %}
+    <div style="margin-top:12px">
+      <h2>Top GEX Patterns</h2>
+      {% for p in patterns[:5] %}
+      <div class="pattern-row">
+        <span style="color:#8b949e">{{ p.pattern }}</span>
+        <span class="{% if p.win_rate > 0.55 %}bullish{% else %}bearish{% endif %}">
+          {{ "{:.0f}%".format(p.win_rate * 100) }} WR (n={{ p.n }})
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="lbl">Schedule (ET)</span>
+      <span class="val">9:45 entry · 11:00 exit · 1:00 exit · 3:30 close</span>
+    </div>
+    <div class="status-item">
+      <span class="lbl">Last Updated</span>
+      <span class="val">{{ gex.last_updated or "—" }}</span>
+    </div>
+    <div class="status-item">
+      <span class="lbl">Balance</span>
+      <span class="val bullish">${{ "{:.2f}".format(stats.balance) }}</span>
+    </div>
+    <div class="status-item">
+      <span class="lbl">Next Action</span>
+      <span class="val neutral">{{ next_action }}</span>
+    </div>
+    <div style="margin-left:auto;font-size:10px;color:#30363d">Auto-refresh: 60s</div>
+  </div>
+
+</div>
+
+<script>
+// Clock
+function updateClock() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+  const h = String(et.getHours()).padStart(2,'0');
+  const m = String(et.getMinutes()).padStart(2,'0');
+  const s = String(et.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}:${s} ET`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Auto refresh every 60s
+setTimeout(() => location.reload(), 60000);
+</script>
+</body>
+</html>

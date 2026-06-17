@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+HEATSEEKER Live Dashboard
+Serves a real-time trading dashboard showing bot analysis, GEX levels,
+trade journal, and pattern learning.
+"""
+import json, os
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+from flask import Flask, render_template, redirect
+
+app = Flask(__name__)
+ET = ZoneInfo("America/New_York")
+
+DATA_DIR      = os.path.join(os.path.dirname(__file__), "data")
+GEX_STATE     = os.path.join(DATA_DIR, "gex_state.json")
+JOURNAL_FILE  = os.path.join(DATA_DIR, "trades.json")
+GOAL          = 10_000.0
+
+def load_gex_state():
+    try:
+        with open(GEX_STATE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def load_journal():
+    try:
+        with open(JOURNAL_FILE) as f:
+            return json.load(f).get("trades", [])
+    except Exception:
+        return []
+
+def compute_stats(trades):
+    closed = [t for t in trades if t.get("pnl_pct") is not None]
+    recent = closed[-20:]
+    wins   = [t for t in recent if t["pnl_pct"] > 0]
+    losses = [t for t in recent if t["pnl_pct"] <= 0]
+    win_rate  = len(wins) / len(recent) if recent else 0.5
+    avg_win   = sum(t["pnl_pct"] for t in wins) / len(wins) if wins else 100.0
+    avg_loss  = abs(sum(t["pnl_pct"] for t in losses) / len(losses)) if losses else 50.0
+    R         = avg_win / avg_loss if avg_loss else 2.0
+    kelly     = max(0.0, min(0.5, win_rate - (1 - win_rate) / R))
+    total_pnl = sum(t.get("pnl_usd", 0) or 0 for t in closed)
+
+    streak, streak_type = 0, None
+    for t in reversed(recent):
+        w = t["pnl_pct"] > 0
+        if streak_type is None:
+            streak_type = "win" if w else "loss"; streak = 1
+        elif (streak_type == "win") == w:
+            streak += 1
+        else:
+            break
+
+    balance = 50.0
+    if closed:
+        bal = closed[-1].get("balance_after")
+        if bal: balance = bal
+
+    goal_pct = balance / GOAL * 100
+
+    return {
+        "total_trades": len(closed),
+        "win_rate": round(win_rate, 3),
+        "avg_win_pct": round(avg_win, 1),
+        "avg_loss_pct": round(avg_loss, 1),
+        "kelly": round(kelly, 3),
+        "total_pnl_usd": round(total_pnl, 2),
+        "streak": streak,
+        "streak_type": streak_type,
+        "balance": round(balance, 2),
+        "goal": GOAL,
+        "goal_progress_pct": round(goal_pct, 2),
+    }
+
+def compute_patterns(trades):
+    closed = [t for t in trades if t.get("pnl_pct") is not None]
+    pattern_stats = {}
+    for t in closed[-30:]:
+        gf = t.get("gex_features") or {}
+        if not gf: continue
+        win = t["pnl_pct"] > 0
+        for key, val in {
+            "gex_size": "large" if gf.get("gex_total_m",0)>150 else "medium" if gf.get("gex_total_m",0)>60 else "small",
+            "consensus": "strong" if gf.get("top5_consensus",0)>0.8 else "aligned" if gf.get("top5_consensus",0)>0.6 else "mixed",
+        }.items():
+            k = f"{key}:{val}"
+            s = pattern_stats.setdefault(k, {"wins":0,"total":0})
+            s["wins"] += int(win); s["total"] += 1
+
+    results = []
+    for k, s in pattern_stats.items():
+        if s["total"] < 2: continue
+        results.append({"pattern": k, "win_rate": round(s["wins"]/s["total"],2), "n": s["total"]})
+    return sorted(results, key=lambda x: x["win_rate"], reverse=True)
+
+def get_next_action():
+    now = datetime.now(ET)
+    h, m = now.hour, now.minute
+    t = h * 60 + m
+    weekday = now.weekday()
+    if weekday >= 5:
+        return "Market closed (weekend)"
+    if t < 585:   return f"Entry in {585-t} min (9:45 AM ET)"
+    if t < 660:   return "Entry window open (9:45–10:30 AM ET)"
+    if t < 660:   return "Monitoring position"
+    if t < 780:   return "Exit check at 11:00 AM ET"
+    if t < 900:   return "Exit check at 1:00 PM ET"
+    if t < 930:   return "Force close at 3:30 PM ET"
+    return "Market closed — next entry tomorrow 9:45 AM ET"
+
+@app.route("/")
+def dashboard():
+    gex    = load_gex_state()
+    trades = load_journal()
+    stats  = compute_stats(trades)
+    patterns = compute_patterns(trades)
+    return render_template(
+        "dashboard.html",
+        gex=type("G", (), gex)(),
+        trades=trades,
+        stats=type("S", (), stats)(),
+        patterns=patterns,
+        next_action=get_next_action(),
+    )
+
+@app.route("/refresh")
+def refresh():
+    return redirect("/")
+
+@app.route("/api/state")
+def api_state():
+    return {
+        "gex":     load_gex_state(),
+        "stats":   compute_stats(load_journal()),
+        "journal": load_journal()[-10:],
+    }
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -13,14 +13,27 @@ log = logging.getLogger("heatseeker")
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 ACCOUNT_NUMBER = "634079917"
 STRIKE_WINDOW  = 15
-VIX_MIN        = 14.0    # below 14 premiums too thin (raised from 12, per research)
+VIX_MIN        = 14.0
 VIX_MAX        = 28.0
-DELTA_MIN      = 0.30    # near-ATM only — 0.30-0.45 delta band
+DELTA_MIN      = 0.30
 DELTA_MAX      = 0.45
 ET             = ZoneInfo("America/New_York")
+SKIP_DATES     = set(os.getenv("SKIP_DATES", "").split(",")) - {""}
+GEX_STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gex_state.json")
 
-# Economic/FOMC dates to skip — update monthly
-SKIP_DATES = set(os.getenv("SKIP_DATES", "").split(",")) - {""}
+def write_gex_state(update: dict):
+    try:
+        try:
+            with open(GEX_STATE_FILE) as f:
+                state = json.load(f)
+        except Exception:
+            state = {}
+        state.update(update)
+        state["last_updated"] = datetime.now(ET).isoformat()
+        with open(GEX_STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        log.warning(f"Could not write GEX state: {e}")
 
 def _et_now():
     return datetime.now(ET)
@@ -229,6 +242,7 @@ def main():
     if vix > VIX_MAX:
         log.warning(f"GATE 3 BLOCKED: VIX {vix:.2f} > {VIX_MAX} (too chaotic)"); sys.exit(0)
     log.info(f"GATE 3 PASS: VIX {vix:.2f} in range [{VIX_MIN}, {VIX_MAX}]")
+    write_gex_state({"vix": vix, "last_action": "Running GEX analysis..."})
 
     balance = get_account_balance()
     print_dashboard(balance)
@@ -290,6 +304,14 @@ def main():
         log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} above gamma flip ${gamma_flip:.0f} — no puts")
         sys.exit(0)
     log.info(f"GATE 6 PASS: gamma flip ${gamma_flip:.0f} supports {direction.upper()}")
+    write_gex_state({
+        "spot": spot, "prev_close": prev_close, "ivr": ivr,
+        "king_strike": king_strike, "king_gex_m": round(king_gex / 1e6, 2),
+        "direction": direction, "gamma_flip": gamma_flip,
+        "call_wall": gex_features.get("call_wall"),
+        "put_wall":  gex_features.get("put_wall"),
+        "gex_features": gex_features,
+    })
 
     confidence, reasons = gex_confidence_score(gex_features, direction)
     print_dealer_flow(gex_features, spot, vix, direction, confidence, reasons)
@@ -312,6 +334,12 @@ def main():
     total = ask * 100 * qty
 
     place_order(contract, expiration, direction, qty)
+    write_gex_state({
+        "last_action": f"{'[DRY RUN] ' if DRY_RUN else ''}ORDER PLACED: BUY {qty}x SPY {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}",
+        "confidence": confidence,
+        "entry_strike": float(contract["strike_price"]),
+        "entry_price": ask, "entry_qty": qty,
+    })
 
     if not DRY_RUN:
         log_entry(
