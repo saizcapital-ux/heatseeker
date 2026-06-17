@@ -26,17 +26,16 @@ def _et_now():
     return datetime.now(ET)
 
 def check_time_window():
-    """Only enter during the proven high-win windows. Return reason if blocked."""
+    """Only enter during the proven high-win window. Return reason if blocked."""
     now = _et_now()
     h, m = now.hour, now.minute
     t = h * 60 + m
-    # Valid windows: 9:45–10:15 AM ET
-    if 585 <= t <= 615:   # 9:45–10:15
+    # Valid window: 9:45–10:30 AM ET (widened to 45 min to survive container restarts)
+    if 585 <= t <= 630:   # 9:45–10:30
         return None
-    # Outside valid window
     if t < 585:
-        return f"Too early ({now.strftime('%H:%M')} ET) — wait for 9:45 AM"
-    return f"Outside entry window ({now.strftime('%H:%M')} ET) — valid: 9:45–10:15 AM"
+        return f"Too early ({now.strftime('%H:%M')} ET) — wait for 9:45 AM ET"
+    return f"Outside entry window ({now.strftime('%H:%M')} ET) — valid window: 9:45–10:30 AM ET"
 
 def net_gex(oi, gamma, spot, is_call):
     return (1 if is_call else -1) * oi * gamma * spot * 100
@@ -205,23 +204,31 @@ def main():
     expiration = today_str
     log.info(f"Trading date: {expiration}")
 
+    log.info("=" * 60)
+    log.info("GATE CHECK")
+    log.info("=" * 60)
+
     # Gate 1 — FOMC / skip-date filter
     if today_str in SKIP_DATES:
-        log.warning(f"Date {today_str} in SKIP_DATES (FOMC/event). Skipping."); sys.exit(0)
+        log.warning(f"GATE 1 BLOCKED: {today_str} in SKIP_DATES (FOMC/event)."); sys.exit(0)
+    log.info("GATE 1 PASS: date not in skip list")
 
-    # Gate 2 — Time-of-day window (9:45–10:15 AM ET only)
+    # Gate 2 — Time-of-day window (9:45–10:30 AM ET)
     window_block = check_time_window()
     if window_block and not DRY_RUN:
-        log.warning(f"TIME GATE: {window_block}. Skipping."); sys.exit(0)
+        log.warning(f"GATE 2 BLOCKED: {window_block}"); sys.exit(0)
     elif window_block:
-        log.info(f"[DRY RUN] Time gate would block: {window_block} — proceeding anyway")
+        log.info(f"GATE 2 [DRY RUN OVERRIDE]: {window_block}")
+    else:
+        log.info(f"GATE 2 PASS: time window OK ({_et_now().strftime('%H:%M')} ET)")
 
-    # Gate 3 — VIX filter (raised to 14, research-backed)
+    # Gate 3 — VIX filter (min 14, research-backed)
     vix = get_vix()
     if vix < VIX_MIN:
-        log.warning(f"VIX {vix:.2f} < {VIX_MIN} (premiums too thin). Skipping."); sys.exit(0)
+        log.warning(f"GATE 3 BLOCKED: VIX {vix:.2f} < {VIX_MIN} (premiums too thin)"); sys.exit(0)
     if vix > VIX_MAX:
-        log.warning(f"VIX {vix:.2f} > {VIX_MAX} (too chaotic). Skipping."); sys.exit(0)
+        log.warning(f"GATE 3 BLOCKED: VIX {vix:.2f} > {VIX_MAX} (too chaotic)"); sys.exit(0)
+    log.info(f"GATE 3 PASS: VIX {vix:.2f} in range [{VIX_MIN}, {VIX_MAX}]")
 
     balance = get_account_balance()
     print_dashboard(balance)
@@ -246,10 +253,12 @@ def main():
     ivr      = compute_ivr(atm_iv)
     log.info(f"ATM IV: {atm_iv*100:.1f}%  IVR: {ivr:.0f}")
     if ivr > 50:
-        log.warning(f"IVR {ivr:.0f} > 50 — premium too expensive to buy. Skipping."); sys.exit(0)
+        log.warning(f"GATE 4 BLOCKED: IVR {ivr:.0f} > 50 — premium too expensive to buy"); sys.exit(0)
     if ivr > 30:
-        log.info(f"IVR {ivr:.0f} in 30-50 zone — reducing spend by 50%")
+        log.info(f"GATE 4 PARTIAL: IVR {ivr:.0f} in 30-50 zone — reducing spend by 50%")
         max_spend = max(10.0, max_spend * 0.5)
+    else:
+        log.info(f"GATE 4 PASS: IVR {ivr:.0f} < 30 (cheap premium)")
 
     nodes = compute_gex_nodes(calls, puts, spot)
     king_strike, king_gex = find_king(nodes)
@@ -264,9 +273,10 @@ def main():
 
     # Gate 5 — Regime confirm (price vs prev close)
     if direction == "call" and spot < prev_close - 0.50:
-        log.warning("GEX=CALL but price bearish vs prev close. Skipping."); sys.exit(0)
+        log.warning(f"GATE 5 BLOCKED: GEX=CALL but SPY ${spot:.2f} bearish vs prev ${prev_close:.2f}"); sys.exit(0)
     if direction == "put" and spot > prev_close + 0.50:
-        log.warning("GEX=PUT but price bullish vs prev close. Skipping."); sys.exit(0)
+        log.warning(f"GATE 5 BLOCKED: GEX=PUT but SPY ${spot:.2f} bullish vs prev ${prev_close:.2f}"); sys.exit(0)
+    log.info(f"GATE 5 PASS: regime confirms {direction.upper()} (spot=${spot:.2f} prev=${prev_close:.2f})")
 
     # GEX pattern analysis + dealer flow
     gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
@@ -274,18 +284,20 @@ def main():
     # Gate 6 — Gamma flip hard boundary (SpotGamma rule: never trade against the flip)
     gamma_flip = gex_features.get("gamma_flip", king_strike)
     if direction == "call" and spot < gamma_flip - 1.0:
-        log.warning(f"GAMMA FLIP GATE: SPY ${spot:.2f} below flip ${gamma_flip:.0f} — no calls. Skipping.")
+        log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} below gamma flip ${gamma_flip:.0f} — no calls")
         sys.exit(0)
     if direction == "put" and spot > gamma_flip + 1.0:
-        log.warning(f"GAMMA FLIP GATE: SPY ${spot:.2f} above flip ${gamma_flip:.0f} — no puts. Skipping.")
+        log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} above gamma flip ${gamma_flip:.0f} — no puts")
         sys.exit(0)
+    log.info(f"GATE 6 PASS: gamma flip ${gamma_flip:.0f} supports {direction.upper()}")
 
     confidence, reasons = gex_confidence_score(gex_features, direction)
     print_dealer_flow(gex_features, spot, vix, direction, confidence, reasons)
     print_pattern_report()
 
     if confidence < 0.35:
-        log.warning(f"GEX confidence {confidence*100:.0f}% too low. Skipping."); sys.exit(0)
+        log.warning(f"GATE 7 BLOCKED: GEX confidence {confidence*100:.0f}% < 35%"); sys.exit(0)
+    log.info(f"GATE 7 PASS: GEX confidence {confidence*100:.0f}%")
 
     max_spend = max(10.0, round(max_spend * confidence, 2))
     log.info(f"Confidence-adjusted spend: ${max_spend:.2f}")
