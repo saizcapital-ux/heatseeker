@@ -1,1 +1,48 @@
-{"trades":[]}
+{
+  "trades": [
+    {
+      "id": "6a315341-manual-call-jun16",
+      "date": "2026-06-16",
+      "symbol": "SPY",
+      "opt_type": "call",
+      "strike": 761.0,
+      "expiry": "2026-06-16",
+      "contracts": 3,
+      "entry_price": 0.107,
+      "exit_price": 0.02,
+      "pnl_pct": -81.3,
+      "pnl_usd": -25.0,
+      "exit_reason": "manual close",
+      "balance_before": 50.0,
+      "balance_after": 25.0,
+      "vix": null,
+      "king_strike": null,
+      "king_gex": null,
+      "direction": "call",
+      "gex_features": null,
+      "confidence": null
+    },
+    {
+      "id": "6a319479-manual-put-jun16",
+      "date": "2026-06-16",
+      "symbol": "SPY",
+      "opt_type": "put",
+      "strike": 749.0,
+      "expiry": "2026-06-16",
+      "contracts": 1,
+      "entry_price": 0.09,
+      "exit_price": 0.06,
+      "pnl_pct": -33.3,
+      "pnl_usd": -3.0,
+      "exit_reason": "manual close",
+      "balance_before": 25.0,
+      "balance_after": 21.64,
+      "vix": null,
+      "king_strike": null,
+      "king_gex": null,
+      "direction": "put",
+      "gex_features": null,
+      "confidence": null
+    }
+  ]
+}
