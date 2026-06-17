@@ -1,2 +1,2 @@
-[start]
-cmd = "python scheduler.py"
+[phases.setup]
+nixPkgs = ["python311"]
