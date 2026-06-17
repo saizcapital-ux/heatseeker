@@ -62,7 +62,7 @@ def refresh_market_data():
     # Always refresh balance regardless of market hours
     try:
         import robin_stocks.robinhood as rh
-        login = rh.login(os.getenv("ROBINHOOD_USERNAME"), os.getenv("ROBINHOOD_PASSWORD"),
+        login = rh.login(os.getenv("RH_USERNAME"), os.getenv("RH_PASSWORD"),
                          store_session=True, expiresIn=86400)
         profile = rh.profiles.load_portfolio_profile(account_number="634079917")
         bp = profile.get("buying_power") or profile.get("withdrawable_amount")
