@@ -12,11 +12,10 @@
   header .meta { color: #8b949e; font-size: 11px; }
   .grid { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto auto auto; gap: 12px; padding: 12px; }
   .chart-wrap { grid-column: 1; grid-row: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
-  .chart-wrap iframe { display: block; width: 100%; height: 460px; border: none; }
   .levels { grid-column: 2; grid-row: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
   .journal { grid-column: 1; grid-row: 2; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
   .knowledge { grid-column: 2; grid-row: 2; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; }
-  .status-bar { grid-column: 1 / -1; grid-row: 3; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; display: flex; gap: 24px; align-items: center; }
+  .status-bar { grid-column: 1 / -1; grid-row: 3; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
   h2 { font-size: 11px; letter-spacing: 1px; color: #8b949e; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
   .level-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; }
   .level-row:last-child { border-bottom: none; }
@@ -53,6 +52,9 @@
   .action-banner { background: #1c2128; border: 1px solid #30363d; border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #e6edf3; margin-bottom: 12px; }
   .bar-wrap { background: #0d1117; border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+  .live-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #1a3a2a; color: #3fb950; font-size: 10px; border: 1px solid #3fb950; margin-left: 8px; }
+  .flash { animation: flash 0.4s ease; }
+  @keyframes flash { 0%{background:#1c2128} 50%{background:#1a3a2a} 100%{background:transparent} }
 </style>
 </head>
 <body>
@@ -61,7 +63,8 @@
   <div class="meta">
     Account 634079917 (agentic) &nbsp;|&nbsp;
     Goal: <strong style="color:#3fb950">${{ "{:,.0f}".format(stats.goal) }}</strong> &nbsp;|&nbsp;
-    <span class="dot dot-green"></span>Live &nbsp;|&nbsp;
+    <span class="dot dot-green"></span><span id="live-status">Live</span>
+    &nbsp;|&nbsp;
     <span id="clock">--:--:-- ET</span>
     &nbsp;|&nbsp; <a href="/refresh" style="color:#58a6ff;text-decoration:none">↻ Refresh</a>
   </div>
@@ -97,15 +100,15 @@
 
   <!-- GEX LEVELS PANEL -->
   <div class="levels">
-    <h2>📡 Bot Analysis</h2>
-    <div class="action-banner">
-      <span class="dot {% if gex.direction %}dot-green{% else %}dot-yellow{% endif %}"></span>
+    <h2>📡 Bot Analysis <span class="live-badge" id="data-age">live</span></h2>
+    <div class="action-banner" id="last-action">
+      <span class="dot dot-green"></span>
       {{ gex.last_action or "Waiting for market open" }}
     </div>
 
     <div class="level-row">
       <span class="level-label">Direction</span>
-      <span>
+      <span id="direction-tag">
         {% if gex.direction == "call" %}<span class="tag tag-call">▲ CALL</span>
         {% elif gex.direction == "put" %}<span class="tag tag-put">▼ PUT</span>
         {% else %}<span class="tag tag-flat">— FLAT</span>{% endif %}
@@ -113,69 +116,63 @@
     </div>
     <div class="level-row">
       <span class="level-label">GEX Confidence</span>
-      <span class="level-val {% if (gex.confidence or 0) > 0.6 %}bullish{% elif (gex.confidence or 0) > 0.4 %}neutral{% else %}bearish{% endif %}">
-        {{ "{:.0f}%".format((gex.confidence or 0)*100) }}
-      </span>
+      <span class="level-val" id="confidence">{{ "{:.0f}%".format((gex.confidence or 0)*100) }}</span>
     </div>
     <div class="level-row">
-      <span class="level-label">SPY Price</span>
-      <span class="level-val">${{ "{:.2f}".format(gex.spot or 0) }}</span>
+      <span class="level-label">SPY Price <span style="color:#3fb950;font-size:10px">●</span></span>
+      <span class="level-val bullish" id="spy-price">${{ "{:.2f}".format(gex.spot or 0) }}</span>
     </div>
     <div class="level-row">
-      <span class="level-label">VIX</span>
-      <span class="level-val {% if (gex.vix or 0) < 18 %}bullish{% elif (gex.vix or 0) < 25 %}neutral{% else %}bearish{% endif %}">
-        {{ "{:.2f}".format(gex.vix or 0) }}
-      </span>
+      <span class="level-label">VIX <span style="color:#3fb950;font-size:10px">●</span></span>
+      <span class="level-val" id="vix-val">{{ "{:.2f}".format(gex.vix or 0) }}</span>
     </div>
     <div class="level-row">
       <span class="level-label">IVR</span>
-      <span class="level-val {% if (gex.ivr or 0) < 30 %}bullish{% elif (gex.ivr or 0) < 50 %}neutral{% else %}bearish{% endif %}">
-        {{ gex.ivr or "—" }}
-      </span>
+      <span class="level-val" id="ivr-val">{{ gex.ivr or "—" }}</span>
     </div>
 
     <div style="margin: 10px 0; border-top: 1px solid #30363d; padding-top: 10px;">
-      <h2 style="margin-bottom:8px">Key Levels</h2>
+      <h2 style="margin-bottom:8px">Key GEX Levels</h2>
       <div class="level-row">
         <span class="level-label">🟢 Call Wall (resistance)</span>
-        <span class="level-val bullish">${{ "{:.0f}".format(gex.call_wall or 0) if gex.call_wall else "—" }}</span>
+        <span class="level-val bullish" id="call-wall">{{ "${:.0f}".format(gex.call_wall) if gex.call_wall else "—" }}</span>
       </div>
       <div class="level-row">
         <span class="level-label">⚡ King Node (magnet)</span>
-        <span class="level-val neutral">${{ "{:.0f}".format(gex.king_strike or 0) if gex.king_strike else "—" }}
+        <span class="level-val neutral" id="king-node">
+          {{ "${:.0f}".format(gex.king_strike) if gex.king_strike else "—" }}
           {% if gex.king_gex_m %}<span style="color:#8b949e;font-size:10px">({{ "{:+.1f}M".format(gex.king_gex_m) }})</span>{% endif %}
         </span>
       </div>
       <div class="level-row">
         <span class="level-label">⚫ Gamma Flip</span>
-        <span class="level-val flat">${{ "{:.0f}".format(gex.gamma_flip or 0) if gex.gamma_flip else "—" }}</span>
+        <span class="level-val flat" id="gamma-flip">{{ "${:.0f}".format(gex.gamma_flip) if gex.gamma_flip else "—" }}</span>
       </div>
       <div class="level-row">
         <span class="level-label">🔴 Put Wall (support)</span>
-        <span class="level-val bearish">${{ "{:.0f}".format(gex.put_wall or 0) if gex.put_wall else "—" }}</span>
+        <span class="level-val bearish" id="put-wall">{{ "${:.0f}".format(gex.put_wall) if gex.put_wall else "—" }}</span>
       </div>
     </div>
 
-    {% if gex.direction %}
     <div style="margin-top:10px">
       <div style="font-size:10px;color:#8b949e;margin-bottom:4px">GEX CONFIDENCE</div>
       <div class="bar-wrap">
-        <div class="bar-fill" style="width:{{ "{:.0f}".format((gex.confidence or 0)*100) }}%;background:{% if (gex.confidence or 0)>0.6%}#3fb950{% elif (gex.confidence or 0)>0.4%}#d29922{% else%}#f85149{%endif%}"></div>
+        <div class="bar-fill" id="conf-bar" style="width:{{ "{:.0f}".format((gex.confidence or 0)*100) }}%;background:{% if (gex.confidence or 0)>0.6%}#3fb950{% elif (gex.confidence or 0)>0.4%}#d29922{% else%}#f85149{%endif%}"></div>
       </div>
     </div>
-    {% endif %}
   </div>
 
   <!-- JOURNAL -->
   <div class="journal">
     <h2>📒 Trade Journal</h2>
+    <div id="journal-body">
     {% if not trades %}
     <div style="color:#8b949e;padding:20px 0;text-align:center">No trades yet — first trade fires at 9:45 AM ET</div>
     {% else %}
     <table>
       <thead>
         <tr>
-          <th>Date</th><th>Type</th><th>Strike</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th>
+          <th>Date</th><th>Type</th><th>Strike</th><th>Entry</th><th>Exit</th><th>P&L %</th><th>P&L $</th><th>Reason</th>
         </tr>
       </thead>
       <tbody>
@@ -188,16 +185,20 @@
           </td>
           <td>${{ t.strike }}</td>
           <td>${{ "{:.2f}".format(t.entry_price) }}</td>
-          <td>{{ "${:.2f}".format(t.exit_price) if t.exit_price else "OPEN" }}</td>
+          <td>{{ "${:.2f}".format(t.exit_price) if t.exit_price else "<span style='color:#d29922'>OPEN</span>" }}</td>
           <td class="pct {% if t.pnl_pct is not none %}{% if t.pnl_pct > 0 %}win{% else %}loss{% endif %}{% endif %}">
             {% if t.pnl_pct is not none %}{{ "{:+.0f}%".format(t.pnl_pct) }}{% else %}—{% endif %}
           </td>
-          <td style="color:#8b949e;font-size:10px">{{ (t.exit_reason or "")[:20] }}</td>
+          <td class="{% if t.pnl_usd is not none %}{% if t.pnl_usd > 0 %}win{% else %}loss{% endif %}{% endif %}">
+            {% if t.pnl_usd is not none %}{{ "${:+.2f}".format(t.pnl_usd) }}{% else %}—{% endif %}
+          </td>
+          <td style="color:#8b949e;font-size:10px">{{ (t.exit_reason or "")[:22] }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% endif %}
+    </div>
   </div>
 
   <!-- KNOWLEDGE / STATS -->
@@ -205,54 +206,55 @@
     <h2>🧠 Bot Intelligence</h2>
     <div class="stat-grid" style="margin-bottom:14px">
       <div class="stat-box">
-        <div class="stat-val {% if stats.win_rate > 0.55 %}bullish{% elif stats.win_rate > 0.4 %}neutral{% else %}bearish{% endif %}">
-          {{ "{:.0f}%".format(stats.win_rate * 100) }}
-        </div>
+        <div class="stat-val" id="stat-wr">{{ "{:.0f}%".format(stats.win_rate * 100) }}</div>
         <div class="stat-lbl">Win Rate</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val {% if stats.total_pnl_usd > 0 %}bullish{% else %}bearish{% endif %}">
-          {{ "${:+.2f}".format(stats.total_pnl_usd) }}
-        </div>
+        <div class="stat-val" id="stat-pnl">{{ "${:+.2f}".format(stats.total_pnl_usd) }}</div>
         <div class="stat-lbl">Total P&L</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val neutral">{{ "{:.0f}%".format(stats.kelly * 100) }}</div>
+        <div class="stat-val neutral" id="stat-kelly">{{ "{:.0f}%".format(stats.kelly * 100) }}</div>
         <div class="stat-lbl">Kelly Size</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val">{{ stats.total_trades }}</div>
+        <div class="stat-val" id="stat-trades">{{ stats.total_trades }}</div>
         <div class="stat-lbl">Trades</div>
       </div>
     </div>
 
     <div style="margin-bottom:8px">
-      <div style="font-size:10px;color:#8b949e;margin-bottom:4px">GOAL PROGRESS ($10,000)</div>
-      <div class="bar-wrap" style="height:12px">
-        <div class="bar-fill" style="width:{{ [stats.goal_progress_pct, 100]|min }}%;background:#3fb950"></div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:#8b949e;margin-bottom:4px">
+        <span>GOAL PROGRESS ($10,000)</span>
+        <span id="balance-val" class="bullish">${{ "{:.2f}".format(stats.balance) }}</span>
       </div>
-      <div style="font-size:11px;color:#3fb950;margin-top:3px">{{ "{:.2f}%".format(stats.goal_progress_pct) }} complete</div>
+      <div class="bar-wrap" style="height:12px">
+        <div class="bar-fill" id="goal-bar" style="width:{{ [stats.goal_progress_pct, 100]|min }}%;background:#3fb950"></div>
+      </div>
+      <div style="font-size:11px;color:#3fb950;margin-top:3px" id="goal-pct">{{ "{:.2f}%".format(stats.goal_progress_pct) }} complete</div>
     </div>
 
-    {% if stats.streak_type %}
-    <div class="level-row">
+    <div class="level-row" id="streak-row">
       <span class="level-label">Current Streak</span>
-      <span class="{% if stats.streak_type == 'win' %}bullish{% else %}bearish{% endif %} level-val">
-        {{ stats.streak }}x {{ stats.streak_type.upper() }}
+      <span class="level-val" id="streak-val">
+        {% if stats.streak_type %}
+        <span class="{% if stats.streak_type == 'win' %}bullish{% else %}bearish{% endif %}">
+          {{ stats.streak }}x {{ stats.streak_type.upper() }}
+        </span>
+        {% else %}—{% endif %}
       </span>
     </div>
-    {% endif %}
     <div class="level-row">
       <span class="level-label">Avg Win</span>
-      <span class="level-val bullish">+{{ "{:.0f}%".format(stats.avg_win_pct) }}</span>
+      <span class="level-val bullish" id="avg-win">+{{ "{:.0f}%".format(stats.avg_win_pct) }}</span>
     </div>
     <div class="level-row">
       <span class="level-label">Avg Loss</span>
-      <span class="level-val bearish">-{{ "{:.0f}%".format(stats.avg_loss_pct) }}</span>
+      <span class="level-val bearish" id="avg-loss">-{{ "{:.0f}%".format(stats.avg_loss_pct) }}</span>
     </div>
 
     {% if patterns %}
-    <div style="margin-top:12px">
+    <div style="margin-top:12px" id="patterns-section">
       <h2>Top GEX Patterns</h2>
       {% for p in patterns[:5] %}
       <div class="pattern-row">
@@ -273,27 +275,26 @@
       <span class="val">9:45 entry · 11:00 exit · 1:00 exit · 3:30 close</span>
     </div>
     <div class="status-item">
-      <span class="lbl">Last Updated</span>
-      <span class="val">{{ gex.last_updated or "—" }}</span>
+      <span class="lbl">Last Bot Update</span>
+      <span class="val" id="last-updated">{{ gex.last_updated or "—" }}</span>
     </div>
     <div class="status-item">
       <span class="lbl">Balance</span>
-      <span class="val bullish">${{ "{:.2f}".format(stats.balance) }}</span>
+      <span class="val bullish" id="status-balance">${{ "{:.2f}".format(stats.balance) }}</span>
     </div>
     <div class="status-item">
       <span class="lbl">Next Action</span>
-      <span class="val neutral">{{ next_action }}</span>
+      <span class="val neutral" id="next-action">{{ next_action }}</span>
     </div>
-    <div style="margin-left:auto;font-size:10px;color:#30363d">Auto-refresh: 60s</div>
+    <div style="margin-left:auto;font-size:10px;color:#8b949e" id="refresh-countdown">Updating in 30s</div>
   </div>
 
 </div>
 
 <script>
-// Clock
+// ── Live clock ────────────────────────────────────────────────────────────────
 function updateClock() {
-  const now = new Date();
-  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+  const et = new Date(new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
   const h = String(et.getHours()).padStart(2,'0');
   const m = String(et.getMinutes()).padStart(2,'0');
   const s = String(et.getSeconds()).padStart(2,'0');
@@ -302,8 +303,157 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// Auto refresh every 60s
-setTimeout(() => location.reload(), 60000);
+// ── AJAX live data update ─────────────────────────────────────────────────────
+function cls(val, thresholds) {
+  // thresholds: [{gt: x, cls: 'bullish'}, ...]
+  for (const {gt, cls} of thresholds) { if (val > gt) return cls; }
+  return thresholds[thresholds.length-1].cls;
+}
+
+function fmt(v, prefix='', suffix='', decimals=2) {
+  if (v == null || v === undefined) return '—';
+  return prefix + Number(v).toFixed(decimals) + suffix;
+}
+
+function flashEl(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+
+let countdown = 30;
+function tick() {
+  countdown--;
+  const el = document.getElementById('refresh-countdown');
+  if (el) el.textContent = `Updating in ${countdown}s`;
+  if (countdown <= 0) { fetchState(); countdown = 30; }
+}
+setInterval(tick, 1000);
+
+async function fetchState() {
+  try {
+    const r = await fetch('/api/state');
+    if (!r.ok) return;
+    const d = await r.json();
+    const g = d.gex || {};
+    const s = d.stats || {};
+
+    // SPY price
+    if (g.spot) {
+      const el = document.getElementById('spy-price');
+      if (el) { const old = el.textContent; el.textContent = '$' + Number(g.spot).toFixed(2); if (old !== el.textContent) flashEl('spy-price'); }
+    }
+    // VIX
+    if (g.vix) {
+      const el = document.getElementById('vix-val');
+      if (el) { el.textContent = Number(g.vix).toFixed(2); el.className = 'level-val ' + cls(g.vix, [{gt:999,'cls':'neutral'}]); }
+      // Color: green<18, yellow 18-25, red>25
+      const vc = g.vix < 18 ? 'bullish' : g.vix < 25 ? 'neutral' : 'bearish';
+      if (el) el.className = 'level-val ' + vc;
+    }
+    // Confidence
+    const conf = g.confidence || 0;
+    const confEl = document.getElementById('confidence');
+    if (confEl) confEl.textContent = Math.round(conf * 100) + '%';
+    const bar = document.getElementById('conf-bar');
+    if (bar) {
+      bar.style.width = Math.round(conf * 100) + '%';
+      bar.style.background = conf > 0.6 ? '#3fb950' : conf > 0.4 ? '#d29922' : '#f85149';
+    }
+
+    // Direction tag
+    const dtag = document.getElementById('direction-tag');
+    if (dtag && g.direction) {
+      if (g.direction === 'call') dtag.innerHTML = '<span class="tag tag-call">▲ CALL</span>';
+      else if (g.direction === 'put') dtag.innerHTML = '<span class="tag tag-put">▼ PUT</span>';
+      else dtag.innerHTML = '<span class="tag tag-flat">— FLAT</span>';
+    }
+
+    // Last action
+    if (g.last_action) {
+      const la = document.getElementById('last-action');
+      if (la) la.innerHTML = '<span class="dot dot-green"></span>' + g.last_action;
+    }
+
+    // Key levels
+    const levels = {
+      'call-wall': g.call_wall ? '$' + Math.round(g.call_wall) : '—',
+      'gamma-flip': g.gamma_flip ? '$' + Math.round(g.gamma_flip) : '—',
+      'put-wall': g.put_wall ? '$' + Math.round(g.put_wall) : '—',
+    };
+    for (const [id, val] of Object.entries(levels)) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+    if (g.king_strike) {
+      const kn = document.getElementById('king-node');
+      if (kn) kn.textContent = '$' + Math.round(g.king_strike) + (g.king_gex_m ? ` (${g.king_gex_m > 0 ? '+' : ''}${Number(g.king_gex_m).toFixed(1)}M)` : '');
+    }
+
+    // Stats
+    if (s.win_rate != null) {
+      const wr = document.getElementById('stat-wr');
+      if (wr) { wr.textContent = Math.round(s.win_rate * 100) + '%'; wr.className = 'stat-val ' + (s.win_rate > 0.55 ? 'bullish' : s.win_rate > 0.4 ? 'neutral' : 'bearish'); }
+    }
+    if (s.total_pnl_usd != null) {
+      const pnl = document.getElementById('stat-pnl');
+      if (pnl) { pnl.textContent = (s.total_pnl_usd >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl_usd).toFixed(2); pnl.className = 'stat-val ' + (s.total_pnl_usd >= 0 ? 'bullish' : 'bearish'); }
+    }
+    if (s.kelly != null) {
+      const kl = document.getElementById('stat-kelly');
+      if (kl) kl.textContent = Math.round(s.kelly * 100) + '%';
+    }
+    if (s.total_trades != null) {
+      const tr = document.getElementById('stat-trades');
+      if (tr) tr.textContent = s.total_trades;
+    }
+    if (s.balance != null) {
+      const bal = document.getElementById('balance-val');
+      if (bal) bal.textContent = '$' + Number(s.balance).toFixed(2);
+      const sb = document.getElementById('status-balance');
+      if (sb) sb.textContent = '$' + Number(s.balance).toFixed(2);
+    }
+    if (s.goal_progress_pct != null) {
+      const gp = document.getElementById('goal-pct');
+      if (gp) gp.textContent = Number(s.goal_progress_pct).toFixed(2) + '% complete';
+      const gb = document.getElementById('goal-bar');
+      if (gb) gb.style.width = Math.min(s.goal_progress_pct, 100) + '%';
+    }
+    if (s.streak_type) {
+      const sv = document.getElementById('streak-val');
+      if (sv) sv.innerHTML = `<span class="${s.streak_type === 'win' ? 'bullish' : 'bearish'}">${s.streak}x ${s.streak_type.toUpperCase()}</span>`;
+    }
+    if (s.avg_win_pct != null) {
+      const aw = document.getElementById('avg-win');
+      if (aw) aw.textContent = '+' + Math.round(s.avg_win_pct) + '%';
+    }
+    if (s.avg_loss_pct != null) {
+      const al = document.getElementById('avg-loss');
+      if (al) al.textContent = '-' + Math.round(s.avg_loss_pct) + '%';
+    }
+
+    // Next action + last updated
+    if (d.next_action) {
+      const na = document.getElementById('next-action');
+      if (na) na.textContent = d.next_action;
+    }
+    if (g.last_updated) {
+      const lu = document.getElementById('last-updated');
+      if (lu) lu.textContent = g.last_updated;
+    }
+
+    document.getElementById('live-status').textContent = 'Live ✓';
+
+  } catch(e) {
+    document.getElementById('live-status').textContent = 'Offline';
+    console.error('State fetch failed:', e);
+  }
+}
+
+// Initial fetch right away, then every 30s via countdown
+fetchState();
 </script>
 </body>
 </html>
