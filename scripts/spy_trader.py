@@ -61,7 +61,7 @@ def login():
         log.error("RH_USERNAME and RH_PASSWORD must be set.")
         sys.exit(1)
     log.info("Logging in to Robinhood...")
-    rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=False)
+    rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=True, expiresIn=86400)
     try:
         if not rh.profiles.load_portfolio_profile():
             raise Exception("empty")
