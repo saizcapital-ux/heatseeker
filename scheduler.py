@@ -10,15 +10,29 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(me
 log = logging.getLogger("heatseeker.scheduler")
 ET = pytz.timezone("America/New_York")
 
-DATA_DIR   = os.path.join(os.path.dirname(__file__), "data")
-GEX_STATE  = os.path.join(DATA_DIR, "gex_state.json")
+DATA_DIR  = os.path.join(os.path.dirname(__file__), "data")
+GEX_STATE = os.path.join(DATA_DIR, "gex_state.json")
+
+def _write_gex_update(update: dict):
+    try:
+        with open(GEX_STATE) as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+    state.update(update)
+    with open(GEX_STATE, "w") as f:
+        json.dump(state, f, indent=2)
 
 def run_entry():
+    now = datetime.now(ET)
+    t   = now.hour * 60 + now.minute
+    # Entry window: 9:45 AM – 12:30 PM ET (750 min), weekdays only
+    if now.weekday() >= 5 or not (585 <= t <= 750):
+        return
     log.info("=" * 60)
-    log.info("SCHEDULER: Firing ENTRY job")
+    log.info(f"ENTRY CHECK at {now.strftime('%H:%M')} ET")
     log.info("=" * 60)
     os.environ["DRY_RUN"] = "false"
-    os.environ["FORCE_CLOSE"] = "false"
     try:
         import importlib, scripts.spy_trader as trader
         importlib.reload(trader)
@@ -29,8 +43,13 @@ def run_entry():
         log.error(f"Entry error: {e}", exc_info=True)
 
 def run_exit(force=False):
+    now = datetime.now(ET)
+    t   = now.hour * 60 + now.minute
+    # Exit checks: 10:00 AM – 3:30 PM ET, weekdays only
+    if now.weekday() >= 5 or t < 600 or t > 930:
+        return
     log.info("=" * 60)
-    log.info(f"SCHEDULER: Firing EXIT job FORCE_CLOSE={force}")
+    log.info(f"EXIT CHECK at {now.strftime('%H:%M')} ET  FORCE={force}")
     log.info("=" * 60)
     os.environ["DRY_RUN"] = "false"
     os.environ["FORCE_CLOSE"] = "true" if force else "false"
@@ -43,24 +62,31 @@ def run_exit(force=False):
     except Exception as e:
         log.error(f"Exit error: {e}", exc_info=True)
 
-def _write_gex_update(update: dict):
+def force_close():
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return
+    log.info("=" * 60)
+    log.info("3:30 PM FORCE CLOSE")
+    log.info("=" * 60)
+    os.environ["DRY_RUN"] = "false"
+    os.environ["FORCE_CLOSE"] = "true"
     try:
-        with open(GEX_STATE) as f:
-            state = json.load(f)
-    except Exception:
-        state = {}
-    state.update(update)
-    with open(GEX_STATE, "w") as f:
-        json.dump(state, f, indent=2)
+        import importlib, scripts.spy_exit as exiter
+        importlib.reload(exiter)
+        exiter.main()
+    except SystemExit:
+        pass
+    except Exception as e:
+        log.error(f"Force close error: {e}", exc_info=True)
 
 def refresh_market_data():
-    """Write live SPY price and VIX to gex_state.json every 5 minutes during market hours.
-    Uses yfinance only — no Robinhood login needed."""
+    """Write live SPY price and VIX to gex_state.json. yfinance only — no Robinhood login."""
     now = datetime.now(ET)
     if now.weekday() >= 5:
         return
     t = now.hour * 60 + now.minute
-    if t < 570 or t > 960:  # outside 9:30 AM - 4:00 PM ET
+    if t < 570 or t > 960:
         return
     try:
         import yfinance as yf
@@ -79,21 +105,24 @@ def refresh_market_data():
 def main():
     scheduler = BlockingScheduler(timezone=ET)
 
-    # Trading jobs
-    scheduler.add_job(run_entry,               CronTrigger(day_of_week="mon-fri", hour=9,  minute=45, timezone=ET), id="entry",       name="Morning entry")
-    scheduler.add_job(lambda: run_exit(False), CronTrigger(day_of_week="mon-fri", hour=11, minute=0,  timezone=ET), id="exit_11am",   name="11 AM exit check")
-    scheduler.add_job(lambda: run_exit(False), CronTrigger(day_of_week="mon-fri", hour=13, minute=0,  timezone=ET), id="exit_1pm",    name="1 PM exit check")
-    scheduler.add_job(lambda: run_exit(True),  CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="force_close", name="3:30 PM force close")
+    # Entry: every 15 minutes — bot self-gates on time window + open position check
+    scheduler.add_job(run_entry, IntervalTrigger(minutes=15), id="entry_scan", name="Entry scan")
 
-    # Live data refresh every 5 minutes
+    # Exit monitor: every 15 minutes — checks trailing stop and hard stop
+    scheduler.add_job(lambda: run_exit(False), IntervalTrigger(minutes=15), id="exit_scan", name="Exit scan")
+
+    # Force close: 3:30 PM sharp every weekday
+    scheduler.add_job(force_close, CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="force_close", name="3:30 PM force close")
+
+    # Market data refresh: every 5 minutes (yfinance, no login)
     scheduler.add_job(refresh_market_data, IntervalTrigger(minutes=5), id="market_refresh", name="Market data refresh")
 
-    log.info("HEATSEEKER Scheduler running. All times ET:")
-    log.info("  9:45 AM  Mon-Fri -> Entry (buy signal)")
-    log.info("  11:00 AM Mon-Fri -> Exit check")
-    log.info("  1:00 PM  Mon-Fri -> Exit check")
-    log.info("  3:30 PM  Mon-Fri -> Force close")
-    log.info("  Every 5m          -> Market data refresh (SPY/VIX)")
+    log.info("HEATSEEKER Scheduler running:")
+    log.info("  Entry scan  : every 15 min (self-gates: 9:45 AM–12:30 PM ET, no open position)")
+    log.info("  Exit scan   : every 15 min (trailing stop, -50% hard stop)")
+    log.info("  Force close : 3:30 PM ET Mon-Fri")
+    log.info("  Market data : every 5 min (SPY price + VIX via yfinance)")
+
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

@@ -53,16 +53,16 @@ def _et_now():
     return datetime.now(ET)
 
 def check_time_window():
-    """Only enter during the proven high-win window. Return reason if blocked."""
+    """Allow entries 9:45 AM–12:30 PM ET. After 10:30 extra GEX confidence required (handled at Gate 7).
+    After 12:30 PM theta decay on 0DTE makes buying too risky."""
     now = _et_now()
     h, m = now.hour, now.minute
     t = h * 60 + m
-    # Valid window: 9:45–10:30 AM ET (widened to 45 min to survive container restarts)
-    if 585 <= t <= 630:   # 9:45–10:30
-        return None
     if t < 585:
-        return f"Too early ({now.strftime('%H:%M')} ET) — wait for 9:45 AM ET"
-    return f"Outside entry window ({now.strftime('%H:%M')} ET) — valid window: 9:45–10:30 AM ET"
+        return f"Too early ({now.strftime('%H:%M')} ET) — market opens 9:30, best entry 9:45 AM ET"
+    if t > 750:   # after 12:30 PM
+        return f"Too late ({now.strftime('%H:%M')} ET) — 0DTE theta too high after 12:30 PM"
+    return None  # 9:45 AM – 12:30 PM: entry allowed
 
 def net_gex(oi, gamma, spot, is_call):
     return (1 if is_call else -1) * oi * gamma * spot * 100
@@ -90,10 +90,28 @@ def get_account_balance():
         if p:
             bp = float(p.get("buying_power", 0) or 0)
             log.info(f"Account buying power: ${bp:.2f}")
+            write_gex_state({"account_balance": round(bp, 2), "buying_power": round(bp, 2)})
             return bp
     except Exception as e:
         log.warning(f"Could not fetch balance: {e}")
-    return 50.0
+    return 21.64
+
+def has_open_position():
+    """Return True if we already hold an open SPY 0DTE options position today."""
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        positions = rh.options.get_open_option_positions(account_number=ACCOUNT_NUMBER) or []
+        for p in positions:
+            qty = float(p.get("quantity", 0) or 0)
+            if qty > 0:
+                exp = (p.get("option", {}) or {}).get("expiration_date", "")
+                symbol = p.get("chain_symbol", "")
+                if symbol == "SPY" and exp == today:
+                    log.info(f"Open position found: {symbol} exp={exp} qty={qty}")
+                    return True
+    except Exception as e:
+        log.warning(f"Position check error: {e}")
+    return False
 
 def get_vix():
     try:
@@ -242,7 +260,7 @@ def main():
         log.warning(f"GATE 1 BLOCKED: {today_str} in SKIP_DATES (FOMC/event)."); sys.exit(0)
     log.info("GATE 1 PASS: date not a holiday or skip date")
 
-    # Gate 2 — Time-of-day window (9:45–10:30 AM ET)
+    # Gate 2 — Time-of-day window (9:45 AM–12:30 PM ET)
     window_block = check_time_window()
     if window_block and not DRY_RUN:
         log.warning(f"GATE 2 BLOCKED: {window_block}"); sys.exit(0)
@@ -250,6 +268,11 @@ def main():
         log.info(f"GATE 2 [DRY RUN OVERRIDE]: {window_block}")
     else:
         log.info(f"GATE 2 PASS: time window OK ({_et_now().strftime('%H:%M')} ET)")
+
+    # Gate 2b — Already in a position today? Skip entry.
+    if has_open_position():
+        log.info("GATE 2b BLOCKED: open SPY 0DTE position already held — skip entry"); sys.exit(0)
+    log.info("GATE 2b PASS: no open position")
 
     # Gate 3 — VIX filter (min 14, research-backed)
     vix = get_vix()
