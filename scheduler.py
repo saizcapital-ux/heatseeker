@@ -54,40 +54,27 @@ def _write_gex_update(update: dict):
         json.dump(state, f, indent=2)
 
 def refresh_market_data():
-    """Write live SPY price, VIX, and Robinhood balance to gex_state.json every 5 minutes."""
+    """Write live SPY price and VIX to gex_state.json every 5 minutes during market hours.
+    Uses yfinance only — no Robinhood login needed."""
     now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return
     t = now.hour * 60 + now.minute
-    update = {"market_updated": now.strftime("%H:%M:%S ET")}
-
-    # Always refresh balance regardless of market hours
+    if t < 570 or t > 960:  # outside 9:30 AM - 4:00 PM ET
+        return
     try:
-        import robin_stocks.robinhood as rh
-        login = rh.login(os.getenv("RH_USERNAME"), os.getenv("RH_PASSWORD"),
-                         store_session=True, expiresIn=86400)
-        profile = rh.profiles.load_portfolio_profile(account_number="634079917")
-        bp = profile.get("buying_power") or profile.get("withdrawable_amount")
-        if bp:
-            update["account_balance"] = round(float(bp), 2)
-            update["buying_power"]    = round(float(bp), 2)
-            log.info(f"Balance refresh: ${float(bp):.2f}")
+        import yfinance as yf
+        spy_info = yf.Ticker("SPY").fast_info
+        vix_info = yf.Ticker("^VIX").fast_info
+        spot = getattr(spy_info, "last_price", None)
+        vix  = getattr(vix_info, "last_price", None)
+        update = {"market_updated": now.strftime("%H:%M:%S ET")}
+        if spot: update["spot"] = round(float(spot), 2)
+        if vix:  update["vix"]  = round(float(vix), 2)
+        _write_gex_update(update)
+        log.info(f"Market refresh: SPY=${spot:.2f}  VIX={vix:.2f}")
     except Exception as e:
-        log.warning(f"Balance refresh error: {e}")
-
-    # Market data only during hours
-    if now.weekday() < 5 and 570 <= t <= 960:
-        try:
-            import yfinance as yf
-            spy_info = yf.Ticker("SPY").fast_info
-            vix_info = yf.Ticker("^VIX").fast_info
-            spot = getattr(spy_info, "last_price", None)
-            vix  = getattr(vix_info, "last_price", None)
-            if spot: update["spot"] = round(float(spot), 2)
-            if vix:  update["vix"]  = round(float(vix), 2)
-            log.info(f"Market refresh: SPY=${spot:.2f}  VIX={vix:.2f}")
-        except Exception as e:
-            log.warning(f"Market data error: {e}")
-
-    _write_gex_update(update)
+        log.warning(f"Market refresh error: {e}")
 
 def main():
     scheduler = BlockingScheduler(timezone=ET)
