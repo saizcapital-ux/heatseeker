@@ -18,7 +18,21 @@ VIX_MAX        = 28.0
 DELTA_MIN      = 0.30
 DELTA_MAX      = 0.45
 ET             = ZoneInfo("America/New_York")
-SKIP_DATES     = set(os.getenv("SKIP_DATES", "").split(",")) - {""}
+# Known NYSE market holidays 2026 — bot will skip these automatically
+NYSE_HOLIDAYS_2026 = {
+    "2026-01-01",  # New Year's Day
+    "2026-01-19",  # MLK Day
+    "2026-02-16",  # Presidents Day
+    "2026-04-03",  # Good Friday
+    "2026-05-25",  # Memorial Day
+    "2026-06-19",  # Juneteenth
+    "2026-07-03",  # Independence Day (observed)
+    "2026-09-07",  # Labor Day
+    "2026-11-26",  # Thanksgiving
+    "2026-11-27",  # Day after Thanksgiving (early close — skip)
+    "2026-12-25",  # Christmas
+}
+SKIP_DATES = NYSE_HOLIDAYS_2026 | (set(os.getenv("SKIP_DATES", "").split(",")) - {""})
 GEX_STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gex_state.json")
 
 def write_gex_state(update: dict):
@@ -221,10 +235,12 @@ def main():
     log.info("GATE CHECK")
     log.info("=" * 60)
 
-    # Gate 1 — FOMC / skip-date filter
+    # Gate 1 — Market holiday / FOMC / skip-date filter
+    if today_str in NYSE_HOLIDAYS_2026:
+        log.warning(f"GATE 1 BLOCKED: {today_str} is a NYSE holiday. No trading."); sys.exit(0)
     if today_str in SKIP_DATES:
         log.warning(f"GATE 1 BLOCKED: {today_str} in SKIP_DATES (FOMC/event)."); sys.exit(0)
-    log.info("GATE 1 PASS: date not in skip list")
+    log.info("GATE 1 PASS: date not a holiday or skip date")
 
     # Gate 2 — Time-of-day window (9:45–10:30 AM ET)
     window_block = check_time_window()
