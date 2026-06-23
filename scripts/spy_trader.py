@@ -12,7 +12,7 @@ log = logging.getLogger("heatseeker")
 
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 ACCOUNT_NUMBER = "634079917"
-STRIKE_WINDOW  = 15
+STRIKE_WINDOW  = 8
 VIX_MIN        = 14.0
 VIX_MAX        = 28.0
 DELTA_MIN      = 0.30
@@ -115,11 +115,19 @@ def has_open_position():
 
 def get_vix():
     try:
+        import yfinance as yf
+        v = yf.Ticker("^VIX").fast_info.last_price
+        if v and float(v) > 0:
+            log.info(f"VIX: {float(v):.2f}")
+            return round(float(v), 2)
+    except Exception:
+        pass
+    try:
         data = rh.stocks.get_quotes("VIX")
         if data and data[0]:
             v = float(data[0].get("last_trade_price", 0) or 0)
             if v > 0:
-                log.info(f"VIX: {v:.2f}")
+                log.info(f"VIX (RH): {v:.2f}")
                 return v
     except Exception:
         pass
