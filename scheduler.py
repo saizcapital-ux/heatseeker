@@ -23,10 +23,25 @@ def _write_gex_update(update: dict):
     with open(GEX_STATE, "w") as f:
         json.dump(state, f, indent=2)
 
+def run_gex_analysis():
+    """Live GEX scan every 15 min during market hours — populates dashboard without trading."""
+    now = datetime.now(ET)
+    t   = now.hour * 60 + now.minute
+    if now.weekday() >= 5 or t < 570 or t > 960:
+        return
+    try:
+        import importlib, scripts.spy_trader as trader
+        importlib.reload(trader)
+        trader.analyze_gex_only()
+    except SystemExit:
+        pass
+    except Exception as e:
+        log.warning(f"GEX analysis error: {e}")
+
 def run_entry():
     now = datetime.now(ET)
     t   = now.hour * 60 + now.minute
-    # Entry window: 9:45 AM – 12:30 PM ET (750 min), weekdays only
+    # Entry window: 9:45 AM – 12:30 PM ET, weekdays only
     if now.weekday() >= 5 or not (585 <= t <= 750):
         return
     log.info("=" * 60)
@@ -114,10 +129,14 @@ def main():
     # Force close: 3:30 PM sharp every weekday
     scheduler.add_job(force_close, CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="force_close", name="3:30 PM force close")
 
+    # Live GEX analysis every 15 min during market hours — keeps dashboard populated
+    scheduler.add_job(run_gex_analysis, IntervalTrigger(minutes=15), id="gex_scan", name="Live GEX scan")
+
     # Market data refresh: every 5 minutes (yfinance, no login)
     scheduler.add_job(refresh_market_data, IntervalTrigger(minutes=5), id="market_refresh", name="Market data refresh")
 
     log.info("HEATSEEKER Scheduler running:")
+    log.info("  GEX scan    : every 15 min (live king node, direction, confidence → dashboard)")
     log.info("  Entry scan  : every 15 min (self-gates: 9:45 AM–12:30 PM ET, no open position)")
     log.info("  Exit scan   : every 15 min (trailing stop, -50% hard stop)")
     log.info("  Force close : 3:30 PM ET Mon-Fri")

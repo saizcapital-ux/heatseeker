@@ -11,9 +11,11 @@
   "call_wall": null,
   "put_wall": null,
   "ivr": null,
+  "regime_ok": null,
+  "top_nodes": null,
   "last_updated": null,
-  "last_action": "Waiting for next market open",
+  "market_updated": null,
+  "last_action": "Bot starting up — GEX scan fires every 15 min during market hours",
   "account_balance": 21.64,
-  "buying_power": 21.64,
-  "last_action": "2 manual trades on Jun 16 — bot takes over at 9:45 AM ET"
+  "buying_power": 21.64
 }

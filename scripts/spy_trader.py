@@ -415,5 +415,89 @@ def main():
     print(f"  Status:     {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
     print("="*60)
 
+def analyze_gex_only():
+    """
+    Run full GEX analysis and write to dashboard without placing any trade.
+    Called every 15 min during market hours so the dashboard always shows live GEX data.
+    """
+    try:
+        login()
+    except SystemExit:
+        return
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    if today_str in NYSE_HOLIDAYS_2026 or today_str in SKIP_DATES:
+        write_gex_state({"last_action": f"Market closed ({today_str})"})
+        return
+
+    now = _et_now()
+    t   = now.hour * 60 + now.minute
+    if now.weekday() >= 5 or t < 570 or t > 960:
+        return  # outside market hours
+
+    try:
+        vix             = get_vix()
+        balance         = get_account_balance()
+        spot, prev_close = get_spot_and_prev_close("SPY")
+        expiration      = today_str
+
+        calls, puts = get_atm_strikes("SPY", expiration, spot)
+        if not calls and not puts:
+            write_gex_state({"spot": spot, "vix": vix, "last_action": "No options chain available yet"})
+            return
+
+        fetch_greeks(calls)
+        fetch_greeks(puts)
+
+        atm_opts = [o for o in calls + puts if abs(float(o["strike_price"]) - spot) < 2]
+        atm_iv   = sum(o.get("implied_volatility", 0) for o in atm_opts) / len(atm_opts) if atm_opts else 0
+        ivr      = compute_ivr(atm_iv)
+
+        nodes                 = compute_gex_nodes(calls, puts, spot)
+        king_strike, king_gex = find_king(nodes)
+
+        if not king_strike:
+            write_gex_state({"spot": spot, "vix": vix, "last_action": "GEX analysis: insufficient data"})
+            return
+
+        direction = "call" if king_gex >= 0 else "put"
+        gex_features          = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+        gamma_flip            = gex_features.get("gamma_flip", king_strike)
+        confidence, reasons   = gex_confidence_score(gex_features, direction)
+
+        # Determine regime alignment
+        regime_ok = not (
+            (direction == "call" and spot < prev_close - 0.50) or
+            (direction == "put"  and spot > prev_close + 0.50)
+        )
+
+        top_nodes_str = "  ".join(f"${s:.0f}={v/1e6:+.1f}M"
+                                  for s, v in sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5])
+
+        write_gex_state({
+            "spot":        spot,
+            "prev_close":  prev_close,
+            "vix":         vix,
+            "ivr":         ivr,
+            "king_strike": king_strike,
+            "king_gex_m":  round(king_gex / 1e6, 2),
+            "direction":   direction,
+            "confidence":  round(confidence, 3),
+            "gamma_flip":  gamma_flip,
+            "call_wall":   gex_features.get("call_wall"),
+            "put_wall":    gex_features.get("put_wall"),
+            "gex_features": gex_features,
+            "regime_ok":   regime_ok,
+            "top_nodes":   top_nodes_str,
+            "last_action": f"GEX scan {now.strftime('%H:%M')} ET — "
+                           f"{'✅' if regime_ok else '⚠️'} {direction.upper()} "
+                           f"conf={confidence*100:.0f}% king=${king_strike:.0f} flip=${gamma_flip:.0f}",
+        })
+        log.info(f"GEX analysis written: {direction.upper()} conf={confidence*100:.0f}% king=${king_strike:.0f}")
+
+    except Exception as e:
+        log.warning(f"GEX analysis error: {e}")
+
+
 if __name__ == "__main__":
     main()
