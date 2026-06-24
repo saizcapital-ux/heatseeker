@@ -14,7 +14,7 @@ STOP_LOSS      = -0.50
 TRAIL_ACTIVATE = 1.00   # trailing stop kicks in at +100%
 TRAIL_DROP     = 0.25   # sell if price falls 25% from peak
 
-STATE_FILE = "/tmp/heatseeker_trail.json"
+STATE_FILE = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "trail_state.json")
 
 def load_state():
     try:
@@ -37,8 +37,22 @@ def login():
     if not user or not pwd:
         log.error("RH_USERNAME and RH_PASSWORD must be set.")
         sys.exit(1)
+    import pathlib
+    session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
+    session_dir.mkdir(parents=True, exist_ok=True)
+    tokens_dir = pathlib.Path.home() / ".tokens"
+    if not tokens_dir.exists():
+        tokens_dir.symlink_to(session_dir)
+    elif tokens_dir.is_symlink() and tokens_dir.resolve() != session_dir.resolve():
+        tokens_dir.unlink()
+        tokens_dir.symlink_to(session_dir)
     log.info("Logging in to Robinhood...")
-    rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=True, expiresIn=86400)
+    try:
+        rh.login(username=user, password=pwd, mfa_code=mfa or None,
+                 store_session=True, expiresIn=86400, pickle_name="heatseeker")
+    except Exception as e:
+        log.error(f"Login exception: {e}")
+        sys.exit(1)
     try:
         if not rh.profiles.load_portfolio_profile():
             raise Exception("empty")
