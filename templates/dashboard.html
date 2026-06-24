@@ -587,6 +587,69 @@ table.flow-feed tbody td:first-child { text-align:left; }
       </div>
     </div>
 
+    <!-- Monthly OPEX Rubber Band Cycle -->
+    <div class="rp-block">
+      <div class="rp-title">📅 Monthly OPEX Cycle
+        <span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px">Put wall → V-snap → New highs</span>
+      </div>
+
+      <!-- Phase ribbon -->
+      <div style="display:flex;gap:2px;margin:10px 16px 4px;border-radius:4px;overflow:hidden;height:26px;font-size:10px">
+        <div id="opc-ph1" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">1·FLUSH</div>
+        <div id="opc-ph2" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">2·PIN</div>
+        <div id="opc-ph3" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">3·SNAP</div>
+        <div id="opc-ph4" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">4·HIGH</div>
+      </div>
+
+      <!-- Metrics row -->
+      <div class="creator-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+
+        <div class="creator-card">
+          <span class="cc-lbl">Phase</span>
+          <span class="cc-val" id="opc-phase-val" style="color:var(--amber)">—</span>
+          <span class="cc-sub" id="opc-phase-lbl">—</span>
+        </div>
+
+        <div class="creator-card">
+          <span class="cc-lbl">Put Wall</span>
+          <span class="cc-val" id="opc-wall-val" style="color:var(--blue)">—</span>
+          <span class="cc-sub">Monthly floor</span>
+        </div>
+
+        <div class="creator-card">
+          <span class="cc-lbl">Target</span>
+          <span class="cc-val" id="opc-target-val" style="color:var(--green)">—</span>
+          <span class="cc-sub">New high zone</span>
+        </div>
+
+        <div class="creator-card">
+          <span class="cc-lbl">Days to OPEX</span>
+          <span class="cc-val" id="opc-days-val" style="color:var(--muted2)">—</span>
+          <span class="cc-sub" id="opc-opex-date">—</span>
+        </div>
+
+      </div>
+
+      <!-- Progress bar: put wall → SPY → new high target -->
+      <div style="padding:0 16px 6px">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px">
+          <span id="opc-bar-low">— wall</span>
+          <span id="opc-bar-spy-lbl" style="color:var(--blue)">SPY</span>
+          <span id="opc-bar-high">— target</span>
+        </div>
+        <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;position:relative">
+          <div id="opc-bar-fill" style="height:100%;border-radius:3px;background:linear-gradient(90deg,var(--amber),var(--green));width:0%;transition:width .6s"></div>
+          <div id="opc-bar-spy-marker" style="position:absolute;top:0;width:2px;height:100%;background:#fff;opacity:.8;transition:left .6s;left:0%"></div>
+        </div>
+      </div>
+
+      <!-- Note -->
+      <div style="padding:4px 16px 12px">
+        <span id="opc-note" style="font-size:10px;color:var(--muted2);line-height:1.4">Waiting for data...</span>
+      </div>
+
+    </div>
+
     <!-- Today's Forecast -->
     <div class="rp-block">
       <div class="sec-hdr">
@@ -1043,6 +1106,50 @@ async function fetchState(){
         el.textContent = (s >= 0 ? "+" : "") + (s*100).toFixed(1) + "%";
         el.style.color = s > 0.10 ? "var(--green)" : s < 0 ? "var(--red)" : "var(--blue)";
       }
+    }
+
+    // ── Monthly OPEX Rubber Band Cycle ────────────────────────────────────────
+    if(g.opex_phase != null) {
+      const ph = g.opex_phase;
+      const phColors = {1:"var(--red)",2:"var(--amber)",3:"var(--blue)",4:"var(--green)"};
+      const phBg     = {1:"#2a0a0a",   2:"#2a1a00",    3:"#001a2a",   4:"#0a2a0a"};
+      [1,2,3,4].forEach(n => {
+        const el = document.getElementById("opc-ph" + n);
+        if(!el) return;
+        if(n === ph) {
+          el.style.background = phBg[n];
+          el.style.color = phColors[n];
+          el.style.fontWeight = "bold";
+        } else {
+          el.style.background = "var(--bg3)";
+          el.style.color = "var(--muted)";
+          el.style.fontWeight = "normal";
+        }
+      });
+      const phEl = document.getElementById("opc-phase-val");
+      if(phEl){ phEl.textContent = ph; phEl.style.color = phColors[ph] || "var(--amber)"; }
+      setText("opc-phase-lbl", g.opex_phase_label || "—");
+
+      // Walls & targets
+      if(g.monthly_put_wall)    { setText("opc-wall-val",   "$" + g.monthly_put_wall);   setText("opc-bar-low", "$" + g.monthly_put_wall + " wall"); }
+      if(g.monthly_call_target) { setText("opc-target-val", "$" + g.monthly_call_target); setText("opc-bar-high", "$" + g.monthly_call_target + " target"); }
+      if(g.opex_days != null)   { setText("opc-days-val", g.opex_days + "d"); }
+      if(g.monthly_opex_date)   { setText("opc-opex-date", g.monthly_opex_date.slice(5).replace("-","/")); }
+
+      // Progress bar: 0% = put wall, 100% = call target
+      const wall   = g.monthly_put_wall   || 730;
+      const target = g.monthly_call_target || 745;
+      const spy    = g.spot || wall;
+      const range  = target - wall;
+      const pct    = Math.max(0, Math.min(100, ((spy - wall) / range) * 100));
+      const fillEl = document.getElementById("opc-bar-fill");
+      const mrkEl  = document.getElementById("opc-bar-spy-marker");
+      if(fillEl)  fillEl.style.width = pct + "%";
+      if(mrkEl)   mrkEl.style.left  = pct + "%";
+      if(g.spot)  setText("opc-bar-spy-lbl", "SPY $" + g.spot.toFixed(2));
+
+      // Note
+      setText("opc-note", g.opex_cycle_note || "—");
     }
 
     // GEX Ladder

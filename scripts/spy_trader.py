@@ -25,6 +25,10 @@ VRP_RICH_IV_THRESHOLD  = 0.08   # IV > RV + 8pts → rich premium, tighten spend
 # Galai: OPEX put-wall floors create mechanical dealer bids — treat as support
 OPEX_PUT_WALL_FLOOR    = 680.0  # approximate near-term institutional floor
 OPEX_CRASH_FLOOR       = 650.0  # ultimate crash hedge floor (41k OI)
+# Monthly OPEX rubber band cycle — update these each month as OI shifts
+MONTHLY_OPEX_DATE      = "2026-07-17"  # next monthly expiry
+MONTHLY_PUT_WALL       = 730.0         # dominant monthly put OI strike → structural floor
+MONTHLY_CALL_TARGET    = 745.0         # call resistance / new-high target above put wall
 # Brenner: jump risk premium is 2x larger in 0DTE — favor early entries
 JUMP_PREMIUM_DECAY_HOUR = 11    # after 11 AM ET, jump premium starts collapsing
 # Term structure: contango depth drives size multiplier (Whaley/Galai framework)
@@ -322,6 +326,62 @@ def find_king(nodes):
     if not nodes: return None, 0
     return max(nodes, key=lambda x: abs(x[1]))
 
+def compute_opex_cycle(spot):
+    """
+    Monthly OPEX rubber band cycle.
+    Heavy put OI at the monthly strike creates a mechanical floor:
+      dealers who sold puts must short SPY to hedge → when puts decay,
+      they buy back → V-shape snap → new highs.
+    Phase 1 FLUSH:    spot approaching wall (within $10), caution
+    Phase 2 PIN:      spot within $3 of wall — rubber band fully loaded
+    Phase 3 SNAP:     bouncing off wall, V-shape in progress
+    Phase 4 NEW HIGH: above call target — new-high momentum
+    Returns dict with phase, call_boost, put_block, note.
+    """
+    wall   = MONTHLY_PUT_WALL
+    target = MONTHLY_CALL_TARGET
+    from datetime import date as _date
+    try:
+        opex_dt = _date.fromisoformat(MONTHLY_OPEX_DATE)
+        days_to_opex = max(0, (opex_dt - _date.today()).days)
+    except Exception:
+        days_to_opex = 0
+
+    dist = spot - wall  # positive = above wall
+
+    if dist < 0:
+        phase, label = 1, "BELOW WALL"
+        call_boost, put_block = 0.0, False
+        note = f"SPY ${spot:.0f} BELOW ${wall:.0f} put wall — floor broken, FLAT"
+    elif dist <= 3:
+        phase, label = 2, "PINNED AT WALL"
+        call_boost, put_block = 1.25, True
+        note = f"SPY ${spot:.0f} pinned at ${wall:.0f} monthly wall — rubber band LOADED, calls favored"
+    elif dist <= 10:
+        phase, label = 3, "V-SNAP RECOVERY"
+        call_boost, put_block = 1.15, True
+        note = f"SPY ${spot:.0f} snapping from ${wall:.0f} — V-shape in progress, calls favored"
+    elif spot >= target:
+        phase, label = 4, "NEW HIGHS"
+        call_boost, put_block = 1.10, False
+        note = f"SPY ${spot:.0f} above target ${target:.0f} — new high territory, trend calls"
+    else:
+        phase, label = 3, "RECOVERY"
+        call_boost, put_block = 1.10, False
+        note = f"SPY ${spot:.0f} recovering above ${wall:.0f} wall — {days_to_opex}d to OPEX, bullish structure"
+
+    return {
+        "opex_phase":        phase,
+        "opex_phase_label":  label,
+        "opex_call_boost":   call_boost,
+        "opex_put_block":    put_block,
+        "opex_cycle_note":   note,
+        "opex_days":         days_to_opex,
+        "monthly_put_wall":  wall,
+        "monthly_call_target": target,
+        "monthly_opex_date": MONTHLY_OPEX_DATE,
+    }
+
 def compute_ivr(atm_iv):
     """
     Estimate IVR using ATM IV vs rough 52-week range.
@@ -518,6 +578,20 @@ def main():
         ts_mult = 1.00  # backwardation already blocked at Gate 3b
     max_spend = min(max_spend * ts_mult, balance * 0.90)
 
+    # Gate 6d — Monthly OPEX rubber band cycle (Galai: put wall = structural floor → new highs)
+    opex_cycle = compute_opex_cycle(spot)
+    log.info(f"GATE 6d OPEX CYCLE: Phase {opex_cycle['opex_phase']} {opex_cycle['opex_phase_label']} — {opex_cycle['opex_cycle_note']}")
+    if opex_cycle["opex_put_block"] and direction == "put":
+        log.warning(f"GATE 6d BLOCKED: Monthly put wall ${MONTHLY_PUT_WALL:.0f} active — puts blocked, rubber band favors calls")
+        sys.exit(0)
+    if direction == "call" and opex_cycle["opex_call_boost"] > 0:
+        pre = max_spend
+        max_spend = min(max_spend * opex_cycle["opex_call_boost"], balance * 0.90)
+        log.info(f"GATE 6d BOOST: OPEX cycle Phase {opex_cycle['opex_phase']} → call boost ×{opex_cycle['opex_call_boost']} (${pre:.2f} → ${max_spend:.2f})")
+    elif opex_cycle["opex_phase"] == 1:
+        log.warning("GATE 6d CAUTION: SPY below monthly put wall — size cut 50%")
+        max_spend = max(10.0, max_spend * 0.50)
+
     write_gex_state({
         "spot": spot, "prev_close": prev_close, "ivr": ivr,
         "vrp_label": vrp_label, "vrp_spread": vrp_spread,
@@ -527,6 +601,7 @@ def main():
         "call_wall": gex_features.get("call_wall"),
         "put_wall":  gex_features.get("put_wall"),
         "gex_features": gex_features,
+        **opex_cycle,
     })
 
     confidence, reasons = gex_confidence_score(gex_features, direction)
@@ -631,6 +706,7 @@ def analyze_gex_only():
         vrp_spread, vrp_label = compute_vrp(atm_iv, vix)
         jump_mult = jump_premium_time_multiplier()
         _, _, opex_note = opex_gravity_check(spot, "call")  # informational only in GEX scan
+        opex_cycle = compute_opex_cycle(spot)
 
         nodes                 = compute_gex_nodes(calls, puts, spot)
         king_strike, king_gex = find_king(nodes)
@@ -727,6 +803,7 @@ def analyze_gex_only():
             "call_vol_total":  call_vol_total,
             "put_vol_total":   put_vol_total,
             "flow_ratio":      flow_ratio,
+            **opex_cycle,
             "last_action": f"GEX scan {now.strftime('%H:%M')} ET — "
                            f"{'✅' if regime_ok else '⚠️'} {direction.upper()} "
                            f"conf={confidence*100:.0f}% king=${king_strike:.0f} flip=${gamma_flip:.0f}",
