@@ -74,11 +74,26 @@ def login():
     if not user or not pwd:
         log.error("RH_USERNAME and RH_PASSWORD must be set.")
         sys.exit(1)
+    # Persist session to /tmp so it survives within the same Railway container run.
+    # store_session=True with a fixed path avoids re-authentication every restart.
+    import pickle, pathlib
+    session_dir = pathlib.Path("/tmp/rh_session")
+    session_dir.mkdir(parents=True, exist_ok=True)
     log.info("Logging in to Robinhood...")
-    rh.login(username=user, password=pwd, mfa_code=mfa or None, store_session=True, expiresIn=86400)
+    try:
+        rh.login(
+            username=user, password=pwd,
+            mfa_code=mfa or None,
+            store_session=True,
+            expiresIn=86400,
+            pickle_name="heatseeker",
+        )
+    except Exception as e:
+        log.error(f"Robinhood login exception: {e}")
+        sys.exit(1)
     try:
         if not rh.profiles.load_portfolio_profile():
-            raise Exception("empty")
+            raise Exception("empty profile")
         log.info("Login verified OK")
     except Exception as e:
         log.error(f"Login failed: {e}")
