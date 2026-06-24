@@ -330,6 +330,48 @@ tr:hover td { background:#1c2128; }
       </div>
     </div>
 
+    <!-- Today's Forecast -->
+    <div class="card" id="forecast-card">
+      <div class="card-header">
+        <span class="card-title">🔮 Today's Forecast</span>
+        <span id="forecast-session" class="muted" style="font-size:10px">—</span>
+      </div>
+      <div class="card-body">
+        <div class="level-row">
+          <span class="level-label">$735 King Node</span>
+          <span class="level-val yellow">⚡ Price Magnet</span>
+        </div>
+        <div id="forecast-scenario" style="margin:10px 0;font-size:11px;line-height:1.7;color:#8b949e">
+          <div style="margin-bottom:6px">
+            <span class="green" style="font-weight:bold">▲ Open above $735</span>
+            <span class="muted"> → dealers squeeze → </span>
+            <span class="tag tag-call" style="font-size:10px">CALL</span>
+          </div>
+          <div>
+            <span class="red" style="font-weight:bold">▼ Open below $735</span>
+            <span class="muted"> → gamma amplifies → </span>
+            <span class="tag tag-put" style="font-size:10px">PUT</span>
+          </div>
+        </div>
+        <div class="level-row">
+          <span class="level-label">VIX Regime</span>
+          <span class="level-val yellow" id="forecast-vix-regime">Elevated (19.49)</span>
+        </div>
+        <div class="level-row">
+          <span class="level-label">Bot fires at</span>
+          <span class="level-val white">9:45 AM ET scan</span>
+        </div>
+        <div class="level-row">
+          <span class="level-label">Entry window</span>
+          <span class="level-val white">9:45 AM – 12:30 PM</span>
+        </div>
+        <div style="margin-top:10px;background:#0d1117;border-radius:5px;padding:8px;font-size:10px;color:#8b949e;line-height:1.6">
+          VIX 19.49 → trades allowed<br>
+          <span class="yellow">Watch first 15 min — let direction confirm</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Bot Intelligence -->
     <div class="card">
       <div class="card-header">
@@ -432,7 +474,7 @@ tr:hover td { background:#1c2128; }
         <div class="lbl">Market Data</div>
         <div class="val muted" id="market-updated">{{ gex.market_updated or "—" }}</div>
       </div>
-      <div style="margin-left:auto;font-size:10px;color:#30363d" id="refresh-cd">Updating in 30s</div>
+      <div style="margin-left:auto;font-size:10px;color:#58a6ff;font-weight:bold" id="refresh-cd">↻ in 60s</div>
     </div>
   </div>
 
@@ -447,13 +489,13 @@ function updateClock(){
 }
 setInterval(updateClock,1000); updateClock();
 
-// ── AJAX state refresh every 30s ─────────────────────────────────────────────
-let countdown=30;
+// ── AJAX state refresh every 60s ─────────────────────────────────────────────
+let countdown=60;
 setInterval(()=>{
   countdown--;
   const el=document.getElementById("refresh-cd");
-  if(el) el.textContent=`Updating in ${countdown}s`;
-  if(countdown<=0){ fetchState(); countdown=30; }
+  if(el) el.textContent=countdown>0?`↻ in ${countdown}s`:`↻ updating…`;
+  if(countdown<=0){ fetchState(); countdown=60; }
 },1000);
 
 async function fetchState(){
@@ -558,6 +600,34 @@ async function fetchState(){
     if(s.avg_win_pct!=null) setText("avg-win","+"+Math.round(s.avg_win_pct)+"%");
     if(s.avg_loss_pct!=null) setText("avg-loss","−"+Math.round(s.avg_loss_pct)+"%");
     if(d.next_action) setText("next-action",d.next_action);
+
+    // Session label on forecast card
+    const sessionLabels={open:"🟢 Market Open",pre:"🟡 Pre-Market",after:"🌙 After-Hours",closed:"⛔ Closed"};
+    if(d.session) setText("forecast-session", sessionLabels[d.session]||d.session);
+
+    // VIX regime label
+    if(g.vix){
+      const regime=g.vix<13?"Ultra-Low":g.vix<18?"Normal / Bull":g.vix<25?"Elevated — Caution":g.vix<35?"High Vol / Fear":"CRISIS";
+      const rc=g.vix<18?"green":g.vix<25?"yellow":"red";
+      setHtml("forecast-vix-regime",`<span class="${rc}">${regime} (${g.vix.toFixed(2)})</span>`);
+    }
+
+    // Journal update
+    if(d.journal && d.journal.length){
+      const jb=document.getElementById("journal-body");
+      const jc=document.getElementById("journal-count");
+      if(jc) jc.textContent=d.journal.length+" recent trades";
+      if(jb){
+        const rows=d.journal.slice().reverse().map(t=>{
+          const typeTag=t.opt_type==="call"?'<span class="tag tag-call">CALL</span>':'<span class="tag tag-put">PUT</span>';
+          const exit=t.exit_price?`<span class="white">$${Number(t.exit_price).toFixed(2)}</span>`:'<span class="open-trade">● OPEN</span>';
+          const pnlPct=t.pnl_pct!=null?`<span class="${t.pnl_pct>0?"win":"loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}%</span>`:'<span class="muted">—</span>';
+          const pnlUsd=t.pnl_usd!=null?`<span class="${t.pnl_usd>0?"win":"loss"}">$${t.pnl_usd>0?"+":""}${Number(t.pnl_usd).toFixed(2)}</span>`:'<span class="muted">—</span>';
+          return `<tr><td class="muted">${t.date||""}</td><td>${typeTag}</td><td class="white">$${t.strike||""}</td><td class="muted">$${Number(t.entry_price||0).toFixed(2)}</td><td>${exit}</td><td>${pnlPct}</td><td>${pnlUsd}</td><td class="muted" style="font-size:10px">${(t.exit_reason||"").slice(0,22)}</td></tr>`;
+        }).join("");
+        jb.innerHTML=`<table><thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>Entry</th><th>Exit</th><th>P&L %</th><th>P&L $</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+    }
 
   } catch(e){
     const p=document.getElementById("conn-pill");

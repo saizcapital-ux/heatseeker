@@ -145,12 +145,21 @@ def get_next_action():
     if weekday >= 5:
         return "Market closed (weekend)"
     if t < 585:   return f"Entry in {585 - t} min (9:45 AM ET)"
-    if t <= 630:  return "Entry window open (9:45–10:30 AM ET)"
-    if t < 660:   return "Monitoring position"
-    if t < 780:   return "Exit check at 11:00 AM ET"
-    if t < 900:   return "Exit check at 1:00 PM ET"
+    if t <= 750:  return "Entry window open (9:45 AM–12:30 PM ET)"
+    if t < 810:   return "Monitoring position"
+    if t < 870:   return "Approaching force-close window"
     if t < 930:   return "Force close at 3:30 PM ET"
     return "Market closed — next entry tomorrow 9:45 AM ET"
+
+def get_market_session():
+    now = datetime.now(ET)
+    h, m = now.hour, now.minute
+    t = h * 60 + m
+    weekday = now.weekday()
+    if weekday >= 5:           return "closed"
+    if t < 570:                return "pre"
+    if 570 <= t < 960:         return "open"
+    return "after"
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -177,11 +186,12 @@ def api_state():
     trades = load_journal()
     gex = load_gex_state()
     return jsonify({
-        "gex":     gex,
-        "stats":   compute_stats(trades, gex),
-        "journal": trades[-10:],
-        "next_action": get_next_action(),
-        "ts": datetime.now(ET).strftime("%H:%M:%S ET"),
+        "gex":          gex,
+        "stats":        compute_stats(trades, gex),
+        "journal":      trades[-10:],
+        "next_action":  get_next_action(),
+        "session":      get_market_session(),
+        "ts":           datetime.now(ET).strftime("%H:%M:%S ET"),
     })
 
 if __name__ == "__main__":
