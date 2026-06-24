@@ -489,6 +489,25 @@ def analyze_gex_only():
         top_nodes_str = "  ".join(f"${s:.0f}={v/1e6:+.1f}M"
                                   for s, v in sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5])
 
+        # Build full strike ladder for dashboard GEX table
+        call_by_strike = {float(o["strike_price"]): o for o in calls}
+        put_by_strike  = {float(o["strike_price"]): o for o in puts}
+        all_strikes = sorted(set(call_by_strike.keys()) | set(put_by_strike.keys()))
+        ladder = []
+        for s in all_strikes:
+            c = call_by_strike.get(s, {})
+            p = put_by_strike.get(s, {})
+            c_gex = net_gex(c.get("open_interest", 0), c.get("gamma", 0), spot, True)
+            p_gex = net_gex(p.get("open_interest", 0), p.get("gamma", 0), spot, False)
+            ladder.append({
+                "strike":     s,
+                "call_oi":    c.get("open_interest", 0),
+                "put_oi":     p.get("open_interest", 0),
+                "call_gex_m": round(c_gex / 1e6, 3),
+                "put_gex_m":  round(p_gex / 1e6, 3),
+                "net_gex_m":  round((c_gex + p_gex) / 1e6, 3),
+            })
+
         write_gex_state({
             "spot":        spot,
             "prev_close":  prev_close,
@@ -504,6 +523,7 @@ def analyze_gex_only():
             "gex_features": gex_features,
             "regime_ok":   regime_ok,
             "top_nodes":   top_nodes_str,
+            "strike_ladder": ladder,
             "last_action": f"GEX scan {now.strftime('%H:%M')} ET — "
                            f"{'✅' if regime_ok else '⚠️'} {direction.upper()} "
                            f"conf={confidence*100:.0f}% king=${king_strike:.0f} flip=${gamma_flip:.0f}",
