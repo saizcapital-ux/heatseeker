@@ -176,13 +176,14 @@ def fetch_greeks(instruments):
             md = md_list[0] if isinstance(md_list, list) and md_list else (md_list or {})
             o["gamma"]         = float(md.get("gamma", 0) or 0)
             o["open_interest"] = int(md.get("open_interest", 0) or 0)
+            o["volume"]        = int(md.get("volume", 0) or 0)
             o["ask_price"]     = float(md.get("ask_price", 0) or 0)
             o["bid_price"]     = float(md.get("bid_price", 0) or 0)
             o["mark_price"]    = float(md.get("adjusted_mark_price", 0) or 0)
             o["delta"]         = abs(float(md.get("delta", 0) or 0))
             o["implied_volatility"] = float(md.get("implied_volatility", 0) or 0)
         except Exception:
-            o["gamma"] = o["open_interest"] = o["ask_price"] = 0
+            o["gamma"] = o["open_interest"] = o["volume"] = o["ask_price"] = 0
             o["bid_price"] = o["mark_price"] = o["delta"] = o["implied_volatility"] = 0
 
 def compute_gex_nodes(calls, puts, spot):
@@ -497,16 +498,44 @@ def analyze_gex_only():
         for s in all_strikes:
             c = call_by_strike.get(s, {})
             p = put_by_strike.get(s, {})
-            c_gex = net_gex(c.get("open_interest", 0), c.get("gamma", 0), spot, True)
-            p_gex = net_gex(p.get("open_interest", 0), p.get("gamma", 0), spot, False)
+            c_gex  = net_gex(c.get("open_interest", 0), c.get("gamma", 0), spot, True)
+            p_gex  = net_gex(p.get("open_interest", 0), p.get("gamma", 0), spot, False)
+            c_vol  = c.get("volume", 0)
+            p_vol  = p.get("volume", 0)
+            c_mark = c.get("mark_price", 0)
+            p_mark = p.get("mark_price", 0)
             ladder.append({
-                "strike":     s,
-                "call_oi":    c.get("open_interest", 0),
-                "put_oi":     p.get("open_interest", 0),
-                "call_gex_m": round(c_gex / 1e6, 3),
-                "put_gex_m":  round(p_gex / 1e6, 3),
-                "net_gex_m":  round((c_gex + p_gex) / 1e6, 3),
+                "strike":      s,
+                "call_oi":     c.get("open_interest", 0),
+                "put_oi":      p.get("open_interest", 0),
+                "call_vol":    c_vol,
+                "put_vol":     p_vol,
+                "call_gex_m":  round(c_gex / 1e6, 3),
+                "put_gex_m":   round(p_gex / 1e6, 3),
+                "net_gex_m":   round((c_gex + p_gex) / 1e6, 3),
+                "call_prem_k": round(c_vol * c_mark * 100 / 1000, 1),
+                "put_prem_k":  round(p_vol * p_mark * 100 / 1000, 1),
             })
+
+        # Build flow feed — biggest premium prints across all strikes
+        flow_prints = []
+        for row in ladder:
+            if row["call_vol"] > 0:
+                flow_prints.append({
+                    "strike": row["strike"], "type": "CALL",
+                    "vol": row["call_vol"], "prem_k": row["call_prem_k"],
+                })
+            if row["put_vol"] > 0:
+                flow_prints.append({
+                    "strike": row["strike"], "type": "PUT",
+                    "vol": row["put_vol"], "prem_k": row["put_prem_k"],
+                })
+        flow_feed = sorted(flow_prints, key=lambda x: x["prem_k"], reverse=True)[:10]
+
+        call_vol_total = sum(row["call_vol"] for row in ladder)
+        put_vol_total  = sum(row["put_vol"]  for row in ladder)
+        total_vol      = call_vol_total + put_vol_total
+        flow_ratio     = round(call_vol_total / total_vol, 3) if total_vol else 0.5
 
         write_gex_state({
             "spot":        spot,
@@ -523,7 +552,11 @@ def analyze_gex_only():
             "gex_features": gex_features,
             "regime_ok":   regime_ok,
             "top_nodes":   top_nodes_str,
-            "strike_ladder": ladder,
+            "strike_ladder":   ladder,
+            "flow_feed":       flow_feed,
+            "call_vol_total":  call_vol_total,
+            "put_vol_total":   put_vol_total,
+            "flow_ratio":      flow_ratio,
             "last_action": f"GEX scan {now.strftime('%H:%M')} ET — "
                            f"{'✅' if regime_ok else '⚠️'} {direction.upper()} "
                            f"conf={confidence*100:.0f}% king=${king_strike:.0f} flip=${gamma_flip:.0f}",

@@ -254,6 +254,23 @@ table.journal tr:last-child td { border-bottom:none; }
 .pat-row:last-child { border-bottom:none; }
 .pat-badge { padding:1px 6px; border-radius:2px; font-size:9px; font-weight:bold; }
 
+/* ── Options Flow panel ── */
+.flow-ratio-wrap { padding:10px 16px 6px; }
+.flow-ratio-bar  { display:flex; height:22px; border-radius:3px; overflow:hidden; margin:6px 0 4px; }
+.flow-ratio-call { background:var(--green); display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:bold; color:#000; transition:width .5s; white-space:nowrap; overflow:hidden; }
+.flow-ratio-put  { background:var(--red);   display:flex; align-items:center; justify-content:flex-end; padding:0 8px; font-size:10px; font-weight:bold; color:#fff; transition:width .5s; white-space:nowrap; overflow:hidden; }
+.flow-stat-row   { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted2); }
+
+table.flow-feed { width:100%; border-collapse:collapse; font-size:11px; }
+table.flow-feed thead th { padding:5px 10px; font-size:9px; letter-spacing:1px; color:var(--muted); border-bottom:1px solid var(--border); text-align:right; font-weight:normal; text-transform:uppercase; }
+table.flow-feed thead th:first-child { text-align:left; }
+table.flow-feed tbody tr { border-bottom:1px solid #111d2a; }
+table.flow-feed tbody tr:hover { background:#131f30; }
+table.flow-feed tbody td { padding:5px 10px; text-align:right; }
+table.flow-feed tbody td:first-child { text-align:left; }
+.flow-call { color:var(--green); font-weight:bold; }
+.flow-put  { color:var(--red);   font-weight:bold; }
+
 /* TradingView chart */
 #tv-chart { height:340px; }
 
@@ -383,6 +400,39 @@ table.journal tr:last-child td { border-bottom:none; }
         <span style="font-size:10px;color:var(--muted)">Bot scans options chain every 15 min · 9:30 AM – 4:00 PM ET</span>
       </div>
       {% endif %}
+    </div>
+
+    <!-- Options Flow -->
+    <div class="sec-hdr">
+      <span class="sec-title">⚡ Options Flow</span>
+      <span class="sec-meta" id="flow-meta">Biggest prints by premium · updated every 15 min</span>
+    </div>
+    <div class="flow-ratio-wrap">
+      <div class="flow-stat-row">
+        <span><span style="color:var(--green)">▲ CALL</span>&nbsp;<span id="call-vol-total">—</span> contracts</span>
+        <span id="flow-ratio-label" style="color:var(--amber);font-weight:bold">— / —</span>
+        <span><span style="color:var(--red)">▼ PUT</span>&nbsp;<span id="put-vol-total">—</span> contracts</span>
+      </div>
+      <div class="flow-ratio-bar">
+        <div class="flow-ratio-call" id="flow-call-bar" style="width:50%">50%</div>
+        <div class="flow-ratio-put"  id="flow-put-bar"  style="width:50%">50%</div>
+      </div>
+    </div>
+    <div id="flow-feed-wrap">
+      <table class="flow-feed">
+        <thead>
+          <tr>
+            <th>Strike</th>
+            <th>Type</th>
+            <th>Volume</th>
+            <th>Premium $K</th>
+            <th>Bias</th>
+          </tr>
+        </thead>
+        <tbody id="flow-feed-body">
+          <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Flow data populates when market opens</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- TradingView Chart -->
@@ -690,6 +740,53 @@ function renderLadder(ladder, gex){
   }).join("");
 }
 
+// ── Options Flow renderer ─────────────────────────────────────────────────────
+function renderFlow(gex){
+  const feed      = gex.flow_feed      || [];
+  const callTotal = gex.call_vol_total || 0;
+  const putTotal  = gex.put_vol_total  || 0;
+  const ratio     = gex.flow_ratio     != null ? gex.flow_ratio : 0.5;
+
+  const callPct = Math.round(ratio * 100);
+  const putPct  = 100 - callPct;
+
+  const cb = document.getElementById("flow-call-bar");
+  const pb = document.getElementById("flow-put-bar");
+  if(cb){ cb.style.width = callPct + "%"; cb.textContent = callPct > 12 ? callPct + "%" : ""; }
+  if(pb){ pb.style.width = putPct  + "%"; pb.textContent = putPct  > 12 ? putPct  + "%" : ""; }
+
+  setText("call-vol-total", callTotal.toLocaleString());
+  setText("put-vol-total",  putTotal.toLocaleString());
+
+  const bias  = callPct > 55 ? "📈 CALL HEAVY" : callPct < 45 ? "📉 PUT HEAVY" : "⚖ NEUTRAL";
+  const biasc = callPct > 55 ? "var(--green)"  : callPct < 45 ? "var(--red)"   : "var(--amber)";
+  setHtml("flow-ratio-label", `<span style="color:${biasc}">${bias}</span>`);
+
+  const body = document.getElementById("flow-feed-body");
+  if(!body) return;
+  if(!feed.length){
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Flow data populates when market opens</td></tr>';
+    return;
+  }
+  body.innerHTML = feed.map((f,i) => {
+    const isCall  = f.type === "CALL";
+    const typeHtml = isCall
+      ? '<span class="flow-call">▲ CALL</span>'
+      : '<span class="flow-put">▼ PUT</span>';
+    const biasHtml = isCall
+      ? '<span class="flow-call">Bullish</span>'
+      : '<span class="flow-put">Bearish</span>';
+    const rank = i === 0 ? ' style="color:var(--amber)"' : '';
+    return `<tr>
+      <td style="color:var(--white)">$${f.strike.toFixed(0)}</td>
+      <td>${typeHtml}</td>
+      <td style="color:var(--muted2)">${f.vol.toLocaleString()}</td>
+      <td${rank} style="font-weight:bold">$${f.prem_k.toFixed(1)}K</td>
+      <td>${biasHtml}</td>
+    </tr>`;
+  }).join("");
+}
+
 // ── AJAX poll every 60s ───────────────────────────────────────────────────────
 let countdown = 60;
 setInterval(()=>{
@@ -811,6 +908,9 @@ async function fetchState(){
 
     // GEX Ladder
     if(g.strike_ladder) renderLadder(g.strike_ladder, g);
+
+    // Options Flow
+    if(g.flow_feed !== undefined || g.flow_ratio !== undefined) renderFlow(g);
 
     // Journal
     if(d.journal && d.journal.length){
