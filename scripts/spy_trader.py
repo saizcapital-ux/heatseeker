@@ -33,7 +33,7 @@ NYSE_HOLIDAYS_2026 = {
     "2026-12-25",  # Christmas
 }
 SKIP_DATES = NYSE_HOLIDAYS_2026 | (set(os.getenv("SKIP_DATES", "").split(",")) - {""})
-GEX_STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gex_state.json")
+GEX_STATE_FILE = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "gex_state.json")
 
 def write_gex_state(update: dict):
     try:
