@@ -74,11 +74,19 @@ def login():
     if not user or not pwd:
         log.error("RH_USERNAME and RH_PASSWORD must be set.")
         sys.exit(1)
-    # Persist session to /tmp so it survives within the same Railway container run.
-    # store_session=True with a fixed path avoids re-authentication every restart.
+    # Persist session to a Railway Volume (mounted at /data) so it survives container restarts.
+    # Symlink ~/.tokens → /data/rh_session so robin-stocks writes directly to the volume.
     import pickle, pathlib
-    session_dir = pathlib.Path("/tmp/rh_session")
+    session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
     session_dir.mkdir(parents=True, exist_ok=True)
+    tokens_dir = pathlib.Path.home() / ".tokens"
+    if not tokens_dir.exists():
+        tokens_dir.symlink_to(session_dir)
+        log.info(f"Symlinked ~/.tokens → {session_dir}")
+    elif tokens_dir.is_symlink() and tokens_dir.resolve() != session_dir.resolve():
+        tokens_dir.unlink()
+        tokens_dir.symlink_to(session_dir)
+        log.info(f"Updated symlink ~/.tokens → {session_dir}")
     log.info("Logging in to Robinhood...")
     try:
         rh.login(
