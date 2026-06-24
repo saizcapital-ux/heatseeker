@@ -14,7 +14,10 @@ ET  = ZoneInfo("America/New_York")
 log = logging.getLogger("heatseeker.web")
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
-GEX_STATE    = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "gex_state.json")
+# Check volume path first, fall back to local data/ dir
+_vol_gex  = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "gex_state.json")
+_local_gex = os.path.join(DATA_DIR, "gex_state.json")
+GEX_STATE    = _vol_gex if os.path.exists(os.path.dirname(_vol_gex)) else _local_gex
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
 GOAL         = 10_000.0
 
