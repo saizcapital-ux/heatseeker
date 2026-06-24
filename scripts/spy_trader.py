@@ -17,6 +17,20 @@ VIX_MIN        = 14.0
 VIX_MAX        = 28.0
 DELTA_MIN      = 0.30
 DELTA_MAX      = 0.45
+
+# ── Creator-derived constants ─────────────────────────────────────────────────
+# Whaley: IV beats realized vol ~78-85% of the time — use this as premium gate
+VRP_CHEAP_IV_THRESHOLD = 0.03   # IV < RV + 3pts → cheap premium, normal size
+VRP_RICH_IV_THRESHOLD  = 0.08   # IV > RV + 8pts → rich premium, tighten spend
+# Galai: OPEX put-wall floors create mechanical dealer bids — treat as support
+OPEX_PUT_WALL_FLOOR    = 680.0  # approximate near-term institutional floor
+OPEX_CRASH_FLOOR       = 650.0  # ultimate crash hedge floor (41k OI)
+# Brenner: jump risk premium is 2x larger in 0DTE — favor early entries
+JUMP_PREMIUM_DECAY_HOUR = 11    # after 11 AM ET, jump premium starts collapsing
+# Term structure: contango depth drives size multiplier (Whaley/Galai framework)
+CONTANGO_BOOST_SLOPE   = 0.10   # VIX3M/VIX slope > 10% → deep contango → scale up
+CONTANGO_NEUTRAL_SLOPE = 0.00   # slope 0-10% → neutral
+# contango neutral slope 0–0.10 → no boost; backwardation already gated
 ET             = ZoneInfo("America/New_York")
 # Known NYSE market holidays 2026 — bot will skip these automatically
 NYSE_HOLIDAYS_2026 = {
@@ -156,6 +170,106 @@ def get_vix():
         pass
     log.warning("VIX unavailable - defaulting to 15.0")
     return 15.0
+
+def get_vix3m():
+    """Fetch VIX3M (93-day forward vol) for term structure slope calculation."""
+    try:
+        import yfinance as yf
+        v = yf.Ticker("^VIX3M").fast_info.last_price
+        if v and float(v) > 0:
+            return round(float(v), 2)
+    except Exception:
+        pass
+    return None
+
+def compute_term_structure(vix, vix3m):
+    """
+    Slope = (VIX3M - VIX) / VIX
+    > 0.10  → deep contango  → size boost
+    0-0.10  → flat/neutral   → no adjustment
+    < 0     → backwardation  → FLAT gate (risk-off)
+    """
+    if vix3m is None or vix <= 0:
+        return 0.0, "unknown"
+    slope = (vix3m - vix) / vix
+    if slope > CONTANGO_BOOST_SLOPE:
+        label = "deep_contango"
+    elif slope >= CONTANGO_NEUTRAL_SLOPE:
+        label = "contango"
+    else:
+        label = "backwardation"
+    log.info(f"Term structure: VIX={vix:.2f} VIX3M={vix3m:.2f} slope={slope:+.3f} → {label}")
+    return round(slope, 4), label
+
+def compute_vrp(atm_iv, vix):
+    """
+    Volatility Risk Premium gate (Whaley).
+    IV as fraction vs VIX as rough 30-day realized proxy.
+    Returns (vrp_spread, label).
+    vrp_spread = ATM IV annualized - VIX/100 (realized vol proxy)
+    """
+    if atm_iv <= 0 or vix <= 0:
+        return 0.0, "unknown"
+    realized_proxy = vix / 100.0
+    vrp = atm_iv - realized_proxy
+    if vrp > VRP_RICH_IV_THRESHOLD:
+        label = "rich"
+    elif vrp > VRP_CHEAP_IV_THRESHOLD:
+        label = "elevated"
+    else:
+        label = "cheap"
+    log.info(f"VRP: ATM_IV={atm_iv*100:.1f}% realized_proxy={realized_proxy*100:.1f}% spread={vrp*100:+.1f}pp → {label}")
+    return round(vrp, 4), label
+
+def jump_premium_time_multiplier():
+    """
+    Brenner: 0DTE jump risk premium is 2x larger early in session.
+    Decays as the day progresses — favor entries before 11 AM.
+    Returns a size multiplier: 1.0 early, scaling down after 11 AM.
+    """
+    now = _et_now()
+    t = now.hour * 60 + now.minute
+    open_t   = 9 * 60 + 30    # 9:30 AM = 570
+    peak_t   = 9 * 60 + 45    # 9:45 AM = 585 (entry start)
+    decay_t  = JUMP_PREMIUM_DECAY_HOUR * 60   # 11:00 AM = 660
+    close_t  = 12 * 60 + 30   # 12:30 PM = 750 (entry end)
+
+    if t <= peak_t:
+        mult = 1.0
+    elif t <= decay_t:
+        # Linear decay from 1.0 down to 0.75 between 9:45 and 11:00
+        pct = (t - peak_t) / (decay_t - peak_t)
+        mult = 1.0 - 0.25 * pct
+    else:
+        # Continue decay to 0.60 by 12:30 PM
+        pct = (t - decay_t) / (close_t - decay_t)
+        mult = 0.75 - 0.15 * pct
+    mult = round(max(0.60, mult), 2)
+    log.info(f"Jump premium time multiplier: {mult:.2f} (entry at {now.strftime('%H:%M')} ET)")
+    return mult
+
+def opex_gravity_check(spot, direction):
+    """
+    Galai: monthly OPEX put walls at $680 (34k OI) and $650 (41k OI) create
+    mechanical dealer bids. Check SPY position relative to these floors.
+    Returns (ok, size_adj, note).
+    """
+    if spot < OPEX_CRASH_FLOOR:
+        return False, 0.0, f"SPY ${spot:.0f} below crash floor ${OPEX_CRASH_FLOOR:.0f} — FLAT"
+    if spot < OPEX_PUT_WALL_FLOOR:
+        if direction == "call":
+            return False, 0.0, f"SPY ${spot:.0f} below put wall ${OPEX_PUT_WALL_FLOOR:.0f} — negative gamma zone, no calls"
+        else:
+            # Puts valid in this zone — dealers buying stock to hedge, volatility high
+            return True, 1.1, f"SPY ${spot:.0f} in put-wall zone — put direction valid, slight boost"
+    elif spot < OPEX_PUT_WALL_FLOOR + 15:
+        # Within 15 pts of put wall — be careful, tighten a bit
+        note = f"SPY ${spot:.0f} near put wall ${OPEX_PUT_WALL_FLOOR:.0f} — normal but cautious"
+        return True, 0.9, note
+    else:
+        # Well above put walls — dealer bid floor in place, calls have structural support
+        note = f"SPY ${spot:.0f} above put walls — dealer bid floor active, {direction.upper()} supported"
+        return True, 1.05 if direction == "call" else 1.0, note
 
 def get_spot_and_prev_close(symbol="SPY"):
     data = rh.stocks.get_quotes(symbol)
@@ -306,14 +420,20 @@ def main():
         log.info("GATE 2b BLOCKED: open SPY 0DTE position already held — skip entry"); sys.exit(0)
     log.info("GATE 2b PASS: no open position")
 
-    # Gate 3 — VIX filter (min 14, research-backed)
-    vix = get_vix()
+    # Gate 3 — VIX filter + term structure (Whaley/Galai)
+    vix  = get_vix()
+    vix3m = get_vix3m()
+    ts_slope, ts_label = compute_term_structure(vix, vix3m)
     if vix < VIX_MIN:
         log.warning(f"GATE 3 BLOCKED: VIX {vix:.2f} < {VIX_MIN} (premiums too thin)"); sys.exit(0)
     if vix > VIX_MAX:
         log.warning(f"GATE 3 BLOCKED: VIX {vix:.2f} > {VIX_MAX} (too chaotic)"); sys.exit(0)
-    log.info(f"GATE 3 PASS: VIX {vix:.2f} in range [{VIX_MIN}, {VIX_MAX}]")
-    write_gex_state({"vix": vix, "last_action": "Running GEX analysis..."})
+    # Term structure gate: backwardation = market pricing imminent spike → FLAT
+    if ts_label == "backwardation":
+        log.warning(f"GATE 3b BLOCKED: VIX term structure in backwardation (slope={ts_slope:+.3f}) — no new entries"); sys.exit(0)
+    log.info(f"GATE 3 PASS: VIX {vix:.2f} in range  |  term structure: {ts_label} (slope={ts_slope:+.3f})")
+    write_gex_state({"vix": vix, "vix3m": vix3m, "ts_slope": ts_slope, "ts_label": ts_label,
+                     "last_action": "Running GEX analysis..."})
 
     balance = get_account_balance()
     print_dashboard(balance)
@@ -332,18 +452,22 @@ def main():
     log.info("Fetching greeks (includes delta for contract selection)...")
     fetch_greeks(calls); fetch_greeks(puts)
 
-    # Gate 4 — IVR filter using ATM IV
+    # Gate 4 — IVR + VRP filter (Whaley: IV overestimates RV 78-85% of the time)
     atm_opts = [o for o in calls + puts if abs(float(o["strike_price"]) - spot) < 2]
     atm_iv   = sum(o.get("implied_volatility", 0) for o in atm_opts) / len(atm_opts) if atm_opts else 0
     ivr      = compute_ivr(atm_iv)
-    log.info(f"ATM IV: {atm_iv*100:.1f}%  IVR: {ivr:.0f}")
+    vrp_spread, vrp_label = compute_vrp(atm_iv, vix)
+    log.info(f"ATM IV: {atm_iv*100:.1f}%  IVR: {ivr:.0f}  VRP: {vrp_label} ({vrp_spread*100:+.1f}pp)")
     if ivr > 50:
         log.warning(f"GATE 4 BLOCKED: IVR {ivr:.0f} > 50 — premium too expensive to buy"); sys.exit(0)
-    if ivr > 30:
-        log.info(f"GATE 4 PARTIAL: IVR {ivr:.0f} in 30-50 zone — reducing spend by 50%")
-        max_spend = max(10.0, max_spend * 0.5)
+    if ivr > 30 or vrp_label == "rich":
+        adj = 0.5 if vrp_label == "rich" else 0.6
+        log.info(f"GATE 4 PARTIAL: IVR {ivr:.0f} / VRP={vrp_label} — reducing spend to {adj*100:.0f}%")
+        max_spend = max(10.0, max_spend * adj)
+    elif vrp_label == "cheap":
+        log.info(f"GATE 4 BOOST: VRP cheap ({vrp_spread*100:+.1f}pp) — options fairly priced, normal size")
     else:
-        log.info(f"GATE 4 PASS: IVR {ivr:.0f} < 30 (cheap premium)")
+        log.info(f"GATE 4 PASS: IVR {ivr:.0f} / VRP {vrp_label}")
 
     nodes = compute_gex_nodes(calls, puts, spot)
     king_strike, king_gex = find_king(nodes)
@@ -375,8 +499,29 @@ def main():
         log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} above gamma flip ${gamma_flip:.0f} — no puts")
         sys.exit(0)
     log.info(f"GATE 6 PASS: gamma flip ${gamma_flip:.0f} supports {direction.upper()}")
+
+    # Gate 6b — OPEX gravity (Galai: OI chain IS the market forecast)
+    opex_ok, opex_adj, opex_note = opex_gravity_check(spot, direction)
+    if not opex_ok:
+        log.warning(f"GATE 6b BLOCKED: {opex_note}"); sys.exit(0)
+    log.info(f"GATE 6b PASS: {opex_note}")
+    max_spend = max(10.0, max_spend * opex_adj)
+
+    # Gate 6c — Term structure size boost/neutral (Whaley: contango = premium seller advantage)
+    if ts_label == "deep_contango":
+        ts_mult = 1.20
+        log.info(f"GATE 6c: deep contango → size boost ×{ts_mult}")
+    elif ts_label == "contango":
+        ts_mult = 1.00
+        log.info(f"GATE 6c: contango → neutral size")
+    else:
+        ts_mult = 1.00  # backwardation already blocked at Gate 3b
+    max_spend = min(max_spend * ts_mult, balance * 0.90)
+
     write_gex_state({
         "spot": spot, "prev_close": prev_close, "ivr": ivr,
+        "vrp_label": vrp_label, "vrp_spread": vrp_spread,
+        "ts_slope": ts_slope, "ts_label": ts_label,
         "king_strike": king_strike, "king_gex_m": round(king_gex / 1e6, 2),
         "direction": direction, "gamma_flip": gamma_flip,
         "call_wall": gex_features.get("call_wall"),
@@ -392,8 +537,10 @@ def main():
         log.warning(f"GATE 7 BLOCKED: GEX confidence {confidence*100:.0f}% < 35%"); sys.exit(0)
     log.info(f"GATE 7 PASS: GEX confidence {confidence*100:.0f}%")
 
-    max_spend = max(10.0, round(max_spend * confidence, 2))
-    log.info(f"Confidence-adjusted spend: ${max_spend:.2f}")
+    # Gate 7b — Brenner jump premium decay: scale size by time-of-day curve
+    jump_mult = jump_premium_time_multiplier()
+    max_spend = max(10.0, round(max_spend * confidence * jump_mult, 2))
+    log.info(f"Final spend: ${max_spend:.2f} (conf={confidence*100:.0f}% jump_mult={jump_mult:.2f} opex_adj={opex_adj:.2f} ts_mult={ts_mult:.2f})")
 
     contract = find_entry_contract(pool, target, max_spend, max_contracts)
     if not contract:
@@ -427,7 +574,10 @@ def main():
     print("="*60)
     print(f"  Account:    {ACCOUNT_NUMBER} (agentic)")
     print(f"  SPY spot:   ${spot:.2f}  (prev ${prev_close:.2f})")
-    print(f"  VIX:        {vix:.2f}  IVR: {ivr:.0f}")
+    print(f"  VIX:        {vix:.2f}  VIX3M: {vix3m or 'n/a'}  IVR: {ivr:.0f}")
+    print(f"  Term Struct:{ts_label} (slope={ts_slope:+.3f})")
+    print(f"  VRP:        {vrp_label} ({vrp_spread*100:+.1f}pp IV vs realized)")
+    print(f"  Jump mult:  {jump_mult:.2f}  OPEX adj: {opex_adj:.2f}  TS mult: {ts_mult:.2f}")
     print(f"  King node:  {king_strike}  (GEX ${king_gex/1e6:.2f}M)")
     print(f"  Gamma flip: ${gamma_flip:.0f}")
     print(f"  Direction:  {direction.upper()}")
@@ -460,8 +610,10 @@ def analyze_gex_only():
         return  # outside market hours
 
     try:
-        vix             = get_vix()
-        balance         = get_account_balance()
+        vix              = get_vix()
+        vix3m            = get_vix3m()
+        ts_slope, ts_label = compute_term_structure(vix, vix3m)
+        balance          = get_account_balance()
         spot, prev_close = get_spot_and_prev_close("SPY")
         expiration      = today_str
 
@@ -476,6 +628,9 @@ def analyze_gex_only():
         atm_opts = [o for o in calls + puts if abs(float(o["strike_price"]) - spot) < 2]
         atm_iv   = sum(o.get("implied_volatility", 0) for o in atm_opts) / len(atm_opts) if atm_opts else 0
         ivr      = compute_ivr(atm_iv)
+        vrp_spread, vrp_label = compute_vrp(atm_iv, vix)
+        jump_mult = jump_premium_time_multiplier()
+        _, _, opex_note = opex_gravity_check(spot, "call")  # informational only in GEX scan
 
         nodes                 = compute_gex_nodes(calls, puts, spot)
         king_strike, king_gex = find_king(nodes)
@@ -549,7 +704,14 @@ def analyze_gex_only():
             "spot":        spot,
             "prev_close":  prev_close,
             "vix":         vix,
+            "vix3m":       vix3m,
+            "ts_slope":    ts_slope,
+            "ts_label":    ts_label,
             "ivr":         ivr,
+            "vrp_label":   vrp_label,
+            "vrp_spread":  vrp_spread,
+            "jump_mult":   jump_mult,
+            "opex_note":   opex_note,
             "king_strike": king_strike,
             "king_gex_m":  round(king_gex / 1e6, 2),
             "direction":   direction,

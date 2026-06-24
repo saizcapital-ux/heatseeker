@@ -254,6 +254,24 @@ table.journal tr:last-child td { border-bottom:none; }
 .pat-row:last-child { border-bottom:none; }
 .pat-badge { padding:1px 6px; border-radius:2px; font-size:9px; font-weight:bold; }
 
+/* ── Creator Signals panel ── */
+.creator-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px 16px; }
+.creator-card {
+  background:var(--bg3);
+  border:1px solid var(--border2);
+  border-radius:4px;
+  padding:10px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.creator-card.full-width { grid-column: 1 / -1; }
+.cc-lbl  { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+.cc-val  { font-size:15px; font-weight:bold; line-height:1.1; }
+.cc-sub  { font-size:9px; color:var(--muted2); margin-top:1px; }
+.cc-bar-wrap { height:5px; background:#0a1020; border-radius:3px; margin-top:5px; overflow:hidden; }
+.cc-bar-fill { height:100%; border-radius:3px; transition:width .5s; }
+
 /* ── Options Flow panel ── */
 .flow-ratio-wrap { padding:10px 16px 6px; }
 .flow-ratio-bar  { display:flex; height:22px; border-radius:3px; overflow:hidden; margin:6px 0 4px; }
@@ -506,6 +524,64 @@ table.flow-feed tbody td:first-child { text-align:left; }
         <div class="kv">
           <span class="kv-lbl">Market Data</span>
           <span class="kv-val" id="market-ts" style="color:var(--muted2);font-size:10px">{{ gex.market_updated or "—" }}</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Creator Signals -->
+    <div class="rp-block">
+      <div class="sec-hdr">
+        <span class="sec-title">🧬 Creator Signals</span>
+        <span class="sec-meta">Whaley · Galai · Brenner</span>
+      </div>
+      <div class="creator-grid">
+
+        <!-- VRP (Whaley) -->
+        <div class="creator-card">
+          <span class="cc-lbl">VRP · Whaley</span>
+          <span class="cc-val" id="cs-vrp-val">—</span>
+          <span class="cc-sub" id="cs-vrp-sub">IV vs realized spread</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-vrp-bar" style="width:0%;background:var(--green)"></div></div>
+        </div>
+
+        <!-- Term Structure (Whaley/Galai) -->
+        <div class="creator-card">
+          <span class="cc-lbl">Term Struct · Whaley</span>
+          <span class="cc-val" id="cs-ts-val">—</span>
+          <span class="cc-sub" id="cs-ts-sub">VIX / VIX3M slope</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-ts-bar" style="width:50%;background:var(--blue)"></div></div>
+        </div>
+
+        <!-- Jump Premium (Brenner) -->
+        <div class="creator-card">
+          <span class="cc-lbl">Jump Mult · Brenner</span>
+          <span class="cc-val" id="cs-jump-val">—</span>
+          <span class="cc-sub">0DTE intraday decay</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-jump-bar" style="width:0%;background:var(--amber)"></div></div>
+        </div>
+
+        <!-- OPEX Gravity (Galai) -->
+        <div class="creator-card">
+          <span class="cc-lbl">OPEX Gravity · Galai</span>
+          <span class="cc-val" id="cs-opex-val">—</span>
+          <span class="cc-sub" id="cs-opex-sub">Put wall floors</span>
+        </div>
+
+        <!-- VIX3M row -->
+        <div class="creator-card full-width" style="flex-direction:row;align-items:center;gap:0">
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+            <span class="cc-lbl">VIX</span>
+            <span class="cc-val" id="cs-vix3m-vix" style="color:var(--amber)">—</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px;border-left:1px solid var(--border2);padding-left:12px">
+            <span class="cc-lbl">VIX3M</span>
+            <span class="cc-val" id="cs-vix3m-val" style="color:var(--blue)">—</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px;border-left:1px solid var(--border2);padding-left:12px">
+            <span class="cc-lbl">Slope</span>
+            <span class="cc-val" id="cs-vix3m-slope" style="color:var(--muted2)">—</span>
+          </div>
         </div>
 
       </div>
@@ -905,6 +981,69 @@ async function fetchState(){
     // Session label
     const sessionLabels={open:"🟢 Market Open",pre:"🟡 Pre-Market",after:"🌙 After-Hours",closed:"⛔ Closed"};
     if(d.session) setText("forecast-session", sessionLabels[d.session]||d.session);
+
+    // ── Creator Signals ──────────────────────────────────────────────────────
+    // VRP (Whaley)
+    if(g.vrp_label != null){
+      const vrpColors = {cheap:"var(--green)", elevated:"var(--amber)", rich:"var(--red)", unknown:"var(--muted2)"};
+      const vrpLabels = {cheap:"CHEAP ✅", elevated:"ELEVATED ⚠️", rich:"RICH ❌", unknown:"—"};
+      const vrpSubs   = {cheap:"Options fairly priced → full size", elevated:"Premium elevated → watch size", rich:"IV >> RV → spend cut 50%", unknown:"—"};
+      const vrpPct    = g.vrp_spread != null ? Math.min(Math.abs(g.vrp_spread)*500, 100) : 0;
+      const vrpBarClr = g.vrp_label==="cheap"?"var(--green)":g.vrp_label==="rich"?"var(--red)":"var(--amber)";
+      const vrpEl = document.getElementById("cs-vrp-val");
+      if(vrpEl){ vrpEl.textContent = vrpLabels[g.vrp_label]||g.vrp_label; vrpEl.style.color = vrpColors[g.vrp_label]||"var(--muted2)"; }
+      const vrpSpread = g.vrp_spread != null ? (g.vrp_spread*100).toFixed(1) : "?";
+      setText("cs-vrp-sub", `Spread: ${vrpSpread > 0 ? "+" : ""}${vrpSpread}pp IV vs RV`);
+      const vrpBar = document.getElementById("cs-vrp-bar");
+      if(vrpBar){ vrpBar.style.width = vrpPct + "%"; vrpBar.style.background = vrpBarClr; }
+    }
+
+    // Term Structure (Whaley/Galai)
+    if(g.ts_label != null){
+      const tsColors = {deep_contango:"var(--green)", contango:"var(--blue)", backwardation:"var(--red)", unknown:"var(--muted2)"};
+      const tsLabels = {deep_contango:"DEEP CONTANGO ✅", contango:"CONTANGO 🔵", backwardation:"BACKWARDATION ❌", unknown:"—"};
+      const tsSubs   = {deep_contango:"Size ×1.20 boost active", contango:"Normal — no adjustment", backwardation:"BLOCKED — all entries flat", unknown:"—"};
+      const tsEl = document.getElementById("cs-ts-val");
+      if(tsEl){ tsEl.textContent = tsLabels[g.ts_label]||g.ts_label; tsEl.style.color = tsColors[g.ts_label]||"var(--muted2)"; }
+      setText("cs-ts-sub", tsSubs[g.ts_label]||"—");
+      const tsPct = g.ts_slope != null ? Math.min(Math.max((g.ts_slope + 0.05)*500, 0), 100) : 50;
+      const tsBar = document.getElementById("cs-ts-bar");
+      if(tsBar){ tsBar.style.width = tsPct + "%"; tsBar.style.background = tsColors[g.ts_label]||"var(--blue)"; }
+    }
+
+    // Jump Premium (Brenner)
+    if(g.jump_mult != null){
+      const jm = Number(g.jump_mult);
+      const jc = jm >= 0.95 ? "var(--green)" : jm >= 0.75 ? "var(--amber)" : "var(--red)";
+      const jEl = document.getElementById("cs-jump-val");
+      if(jEl){ jEl.textContent = "×" + jm.toFixed(2); jEl.style.color = jc; }
+      const jBar = document.getElementById("cs-jump-bar");
+      if(jBar){ jBar.style.width = (jm*100).toFixed(0) + "%"; jBar.style.background = jc; }
+    }
+
+    // OPEX Gravity (Galai)
+    if(g.opex_note != null){
+      const opexNote = g.opex_note || "";
+      const isBlocked = opexNote.includes("FLAT") || opexNote.includes("no calls");
+      const isBoost   = opexNote.includes("boost") || opexNote.includes("floor active");
+      const oc = isBlocked ? "var(--red)" : isBoost ? "var(--green)" : "var(--amber)";
+      const ov = isBlocked ? "BLOCKED ❌" : isBoost ? "SUPPORTED ✅" : "CAUTION ⚠️";
+      const ovEl = document.getElementById("cs-opex-val");
+      if(ovEl){ ovEl.textContent = ov; ovEl.style.color = oc; }
+      setText("cs-opex-sub", opexNote.length > 40 ? opexNote.slice(0, 40) + "…" : opexNote);
+    }
+
+    // VIX3M row
+    if(g.vix)   { const el=document.getElementById("cs-vix3m-vix");   if(el){ el.textContent=g.vix.toFixed(2); } }
+    if(g.vix3m) { const el=document.getElementById("cs-vix3m-val");   if(el){ el.textContent=g.vix3m.toFixed(2); } }
+    if(g.ts_slope != null){
+      const el=document.getElementById("cs-vix3m-slope");
+      if(el){
+        const s = g.ts_slope;
+        el.textContent = (s >= 0 ? "+" : "") + (s*100).toFixed(1) + "%";
+        el.style.color = s > 0.10 ? "var(--green)" : s < 0 ? "var(--red)" : "var(--blue)";
+      }
+    }
 
     // GEX Ladder
     if(g.strike_ladder) renderLadder(g.strike_ladder, g);
