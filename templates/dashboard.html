@@ -3,252 +3,328 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HEATSEEKER — Vol Signal Dashboard</title>
+<title>HEATSEEKER · Vol Signal</title>
 <style>
 :root{
-  --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--bg4:#22222e;
-  --green:#00ff88;--red:#ff3366;--amber:#ffaa00;--blue:#4488ff;
-  --white:#e8e8f0;--muted:#666680;--muted2:#888899;--border:#2a2a3a;--card-r:10px;
+  --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--bg4:#22222e;--bg5:#2a2a3a;
+  --green:#00ff88;--red:#ff3366;--amber:#ffaa00;--blue:#4488ff;--purple:#aa55ff;
+  --white:#e8e8f0;--muted:#555570;--muted2:#7777aa;--border:#1e1e2e;
+  --call-bg:rgba(0,255,136,.07);--put-bg:rgba(255,51,102,.07);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--white);font-family:'SF Mono',monospace;font-size:13px;min-height:100vh;}
+html,body{height:100%;background:var(--bg);color:var(--white);font-family:'SF Mono','Fira Mono',monospace;font-size:12px;}
 
-/* Header */
-.hdr{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;}
-.hdr-logo{font-size:16px;font-weight:700;color:var(--amber);letter-spacing:2px;display:flex;align-items:center;gap:6px;}
-.hdr-sep{color:var(--border);}
-.hdr-item{display:flex;flex-direction:column;align-items:center;}
-.hdr-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
-.hdr-val{font-size:15px;font-weight:700;color:var(--white);}
-.hdr-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
-.acct-badge{font-size:10px;color:var(--muted2);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
-.clock{font-size:13px;color:var(--muted2);}
-.pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.pill-live{background:#0a2a0a;border:1px solid var(--green);color:var(--green);}
-.pill-offline{background:#2a0a0a;border:1px solid var(--red);color:var(--red);}
-.dot-pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.4s infinite;}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.cd-badge{font-size:10px;color:var(--muted);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
+/* ─── Header ─── */
+.hdr{display:flex;align-items:center;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);height:44px;padding:0 12px;overflow:hidden;}
+.hdr-logo{font-size:13px;font-weight:900;color:var(--amber);letter-spacing:3px;display:flex;align-items:center;gap:6px;padding-right:16px;border-right:1px solid var(--border);margin-right:16px;white-space:nowrap;}
+.hdr-logo svg{width:14px;height:14px;fill:var(--amber);}
+.hdr-chip{display:flex;flex-direction:column;align-items:center;padding:0 14px;border-right:1px solid var(--border);min-width:80px;}
+.hdr-chip-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:1px;}
+.hdr-chip-val{font-size:14px;font-weight:700;color:var(--white);}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.acct{font-size:9px;color:var(--muted2);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
+.clock{font-size:11px;color:var(--muted2);min-width:90px;text-align:right;}
+.pill{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;}
+.pill-live{background:#051505;border:1px solid var(--green);color:var(--green);}
+.pill-off{background:#150505;border:1px solid var(--red);color:var(--red);}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.cd{font-size:9px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:3px;border:1px solid var(--border);}
 
-/* Layout */
-.main{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px;max-width:1400px;margin:0 auto;}
-@media(max-width:900px){.main{grid-template-columns:1fr;}}
+/* ─── Key levels bar ─── */
+.levels{display:flex;align-items:center;gap:0;background:var(--bg3);border-bottom:1px solid var(--border);height:34px;padding:0 12px;overflow-x:auto;}
+.level-item{display:flex;flex-direction:column;align-items:center;padding:0 16px;border-right:1px solid var(--border);min-width:110px;}
+.level-item:last-child{border-right:none;}
+.level-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;}
+.level-val{font-size:12px;font-weight:700;}
+.lv-call{color:var(--green);}
+.lv-put{color:var(--red);}
+.lv-flip{color:var(--amber);}
+.lv-mp{color:var(--purple);}
+.lv-gex{color:var(--blue);}
+.lv-neutral{color:var(--white);}
 
-/* Cards */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:16px;}
-.card-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:12px;}
+/* ─── Signal banner ─── */
+.banner{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);}
+.banner-text{flex:1;font-size:11px;color:var(--muted2);}
+.banner-badge{padding:4px 14px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.5px;}
+.b-call{background:rgba(0,255,136,.12);color:var(--green);border:1px solid rgba(0,255,136,.3);}
+.b-put{background:rgba(255,51,102,.12);color:var(--red);border:1px solid rgba(255,51,102,.3);}
+.b-flat{background:var(--bg4);color:var(--muted2);border:1px solid var(--border);}
 
-/* Signal grid */
-.sig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;}
-@media(max-width:700px){.sig-grid{grid-template-columns:1fr 1fr;}}
-.sig-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:14px;transition:border-color .3s,box-shadow .3s;}
-.sig-card.active-call{border-color:var(--green);box-shadow:0 0 14px rgba(0,255,136,.14);}
-.sig-card.active-put{border-color:var(--red);box-shadow:0 0 14px rgba(255,51,102,.14);}
-.sig-label{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:6px;}
-.sig-val{font-size:20px;font-weight:700;color:var(--white);margin-bottom:4px;}
-.sig-sub{font-size:11px;color:var(--muted2);}
-.sig-bar-wrap{height:4px;background:var(--bg4);border-radius:2px;margin-top:8px;overflow:hidden;}
-.sig-bar{height:100%;border-radius:2px;transition:width .5s,background .5s;}
+/* ─── Main layout ─── */
+.layout{display:grid;grid-template-columns:280px 1fr 300px;height:calc(100vh - 112px);overflow:hidden;}
+@media(max-width:1100px){.layout{grid-template-columns:240px 1fr;}}
+@media(max-width:800px){.layout{grid-template-columns:1fr;height:auto;}}
 
-/* Banner */
-.banner{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:var(--card-r);border:1px solid var(--border);margin-bottom:16px;background:var(--bg3);transition:background .3s,border-color .3s;}
-.banner.call{background:#0a1a0f;border-color:var(--green);}
-.banner.put{background:#1a0a0f;border-color:var(--red);}
-.banner-icon{font-size:22px;}
-.banner-text{flex:1;}
-.banner-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
-.banner-main{font-size:14px;font-weight:600;}
-.banner-badge{padding:6px 16px;border-radius:6px;font-size:13px;font-weight:700;}
-.badge-call{background:rgba(0,255,136,.15);color:var(--green);border:1px solid var(--green);}
-.badge-put{background:rgba(255,51,102,.15);color:var(--red);border:1px solid var(--red);}
-.badge-flat{background:var(--bg4);color:var(--muted);border:1px solid var(--border);}
+/* ─── Panel commons ─── */
+.panel{border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;}
+.panel:last-child{border-right:none;}
+.p-title{font-size:8px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);padding:10px 12px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.p-title-right{font-size:8px;color:var(--muted);font-weight:400;letter-spacing:.5px;}
 
-/* Chart */
-.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);overflow:hidden;margin-bottom:16px;}
-.chart-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);}
+/* ─── Left panel: Vol signals ─── */
+.vol-grid{display:flex;flex-direction:column;gap:0;}
+.vol-row{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px;}
+.vol-row-label{font-size:8px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);}
+.vol-row-val{font-size:16px;font-weight:700;color:var(--white);}
+.vol-row-sub{font-size:10px;color:var(--muted2);}
+.vol-bar-wrap{height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden;}
+.vol-bar{height:100%;border-radius:2px;transition:width .5s,background .5s;}
 
-/* Sidebar */
-.sidebar{display:flex;flex-direction:column;gap:16px;}
-.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.stat-item{background:var(--bg3);border-radius:6px;padding:10px;}
-.stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}
-.stat-val{font-size:16px;font-weight:700;}
-.goal-bar-bg{height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-top:8px;}
-.goal-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:3px;transition:width .5s;}
+/* ─── Center panel: GEX Ladder + Chart ─── */
+.center{display:flex;flex-direction:column;}
+.chart-wrap{flex:1;min-height:260px;background:var(--bg);}
 
-/* Journal */
-.journal-table{width:100%;border-collapse:collapse;font-size:11px;}
-.journal-table th{color:var(--muted);font-weight:400;text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);}
-.journal-table td{padding:5px 6px;border-bottom:1px solid #1a1a24;}
+/* GEX Ladder */
+.ladder{overflow-y:auto;}
+.ladder-header{display:grid;grid-template-columns:60px 1fr 1fr 70px;gap:0;padding:5px 10px;border-bottom:1px solid var(--border);}
+.ladder-header span{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.ladder-header span:nth-child(2){text-align:right;color:var(--green);}
+.ladder-header span:nth-child(3){text-align:left;color:var(--red);}
+.ladder-header span:nth-child(4){text-align:right;}
+.ladder-row{display:grid;grid-template-columns:60px 1fr 1fr 70px;gap:0;padding:3px 10px;border-bottom:1px solid rgba(30,30,46,.6);align-items:center;position:relative;}
+.ladder-row:hover{background:var(--bg3);}
+.ladder-row.at-spot{background:rgba(68,136,255,.06);border-left:2px solid var(--blue);}
+.ladder-row.at-flip{background:rgba(255,170,0,.05);border-left:2px solid var(--amber);}
+.ladder-row.at-cwall{background:rgba(0,255,136,.05);border-left:2px solid var(--green);}
+.ladder-row.at-pwall{background:rgba(255,51,102,.05);border-left:2px solid var(--red);}
+.strike-cell{font-size:11px;font-weight:700;color:var(--muted2);display:flex;align-items:center;gap:4px;}
+.row-tag{font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;letter-spacing:.5px;}
+.tag-spot{background:var(--blue);color:#fff;}
+.tag-flip{background:var(--amber);color:#000;}
+.tag-cwall{background:var(--green);color:#000;}
+.tag-pwall{background:var(--red);color:#fff;}
+.tag-mp{background:var(--purple);color:#fff;}
+.bar-cell-r{display:flex;justify-content:flex-end;align-items:center;padding-right:4px;}
+.bar-cell-l{display:flex;justify-content:flex-start;align-items:center;padding-left:4px;}
+.gex-bar{height:10px;border-radius:2px;min-width:2px;}
+.call-bar{background:linear-gradient(90deg,transparent,var(--green));border-radius:2px 0 0 2px;}
+.put-bar{background:linear-gradient(90deg,var(--red),transparent);border-radius:0 2px 2px 0;}
+.net-cell{font-size:10px;font-weight:700;text-align:right;}
+
+/* ─── Right panel: Flow + Stats ─── */
+.flow-table{width:100%;border-collapse:collapse;}
+.flow-table th{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;}
+.flow-table td{font-size:10px;padding:5px 8px;border-bottom:1px solid rgba(30,30,46,.5);}
+.flow-call{color:var(--green);}
+.flow-put{color:var(--red);}
+.flow-prem{font-weight:700;color:var(--white);}
+
+.net-flow-wrap{padding:10px 12px;border-bottom:1px solid var(--border);}
+.net-flow-bar{height:16px;background:var(--bg5);border-radius:3px;overflow:hidden;display:flex;margin-top:4px;}
+.nf-calls{background:linear-gradient(90deg,var(--green),rgba(0,255,136,.5));border-radius:3px 0 0 3px;display:flex;align-items:center;padding-left:6px;font-size:9px;font-weight:700;color:#000;transition:width .5s;}
+.nf-puts{background:linear-gradient(90deg,rgba(255,51,102,.5),var(--red));border-radius:0 3px 3px 0;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-size:9px;font-weight:700;color:#fff;transition:width .5s;}
+
+/* ─── Stats section ─── */
+.stats-block{padding:10px 12px;border-bottom:1px solid var(--border);}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;}
+.stat-lbl{font-size:9px;color:var(--muted);}
+.stat-val{font-size:11px;font-weight:700;}
+.goal-bar-bg{height:4px;background:var(--bg5);border-radius:2px;overflow:hidden;margin-top:6px;}
+.goal-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:2px;transition:width .5s;}
+
+/* ─── Journal ─── */
+.journal-table{width:100%;border-collapse:collapse;}
+.journal-table th{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;}
+.journal-table td{font-size:10px;padding:5px 8px;border-bottom:1px solid rgba(30,30,46,.5);}
 .j-win{color:var(--green);font-weight:700;}
 .j-loss{color:var(--red);font-weight:700;}
 .j-open{color:var(--amber);}
-
-/* Vol surface table */
-.vol-table td{padding:5px 0;font-size:12px;}
-.vol-table td:last-child{text-align:right;font-weight:700;}
 </style>
 </head>
 <body>
 
-<!-- Header -->
+<!-- ─── Header ─── -->
 <div class="hdr">
   <div class="hdr-logo">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffaa00"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
     HEATSEEKER
   </div>
-  <div class="hdr-sep">|</div>
-  <div class="hdr-item"><span class="hdr-label">SPY</span><span class="hdr-val" id="hdr-spy">—</span></div>
-  <div class="hdr-item"><span class="hdr-label">VIX</span><span class="hdr-val" id="hdr-vix" style="color:var(--muted2)">—</span></div>
-  <div class="hdr-item"><span class="hdr-label">Signal</span><span class="hdr-val" id="hdr-sig" style="color:var(--muted2)">FLAT</span></div>
-  <div class="hdr-item"><span class="hdr-label">Balance</span><span class="hdr-val" id="hdr-bal">$21.64</span></div>
+  <div class="hdr-chip"><span class="hdr-chip-lbl">SPY</span><span class="hdr-chip-val" id="h-spy">—</span></div>
+  <div class="hdr-chip"><span class="hdr-chip-lbl">VIX</span><span class="hdr-chip-val" id="h-vix" style="color:var(--muted2)">—</span></div>
+  <div class="hdr-chip"><span class="hdr-chip-lbl">Signal</span><span class="hdr-chip-val" id="h-sig" style="color:var(--muted2)">FLAT</span></div>
+  <div class="hdr-chip"><span class="hdr-chip-lbl">GEX</span><span class="hdr-chip-val" id="h-gex" style="color:var(--muted2)">—</span></div>
+  <div class="hdr-chip"><span class="hdr-chip-lbl">Balance</span><span class="hdr-chip-val" id="h-bal">$21.64</span></div>
   <div class="hdr-right">
-    <span class="acct-badge">Acct 634079917</span>
+    <span class="acct">Acct 634079917</span>
     <span class="clock" id="clock">—</span>
-    <span class="pill pill-live" id="conn-pill"><span class="dot-pulse"></span>LIVE</span>
-    <span class="cd-badge" id="cd">↻ 60s</span>
+    <span class="pill pill-live" id="pill"><span class="dot"></span>LIVE</span>
+    <span class="cd" id="cd">↻ 60s</span>
   </div>
 </div>
 
-<!-- Main -->
-<div class="main">
-<div>
+<!-- ─── Key levels bar ─── -->
+<div class="levels">
+  <div class="level-item"><span class="level-lbl">Call Wall</span><span class="level-val lv-call" id="lv-cwall">—</span></div>
+  <div class="level-item"><span class="level-lbl">Gamma Flip</span><span class="level-val lv-flip" id="lv-flip">—</span></div>
+  <div class="level-item"><span class="level-lbl">SPY Now</span><span class="level-val lv-neutral" id="lv-spot">—</span></div>
+  <div class="level-item"><span class="level-lbl">Max Pain</span><span class="level-val lv-mp" id="lv-mp">—</span></div>
+  <div class="level-item"><span class="level-lbl">Put Wall</span><span class="level-val lv-put" id="lv-pwall">—</span></div>
+  <div class="level-item"><span class="level-lbl">VIX Regime</span><span class="level-val" id="lv-regime" style="color:var(--muted2)">—</span></div>
+  <div class="level-item"><span class="level-lbl">Term Structure</span><span class="level-val" id="lv-ts" style="color:var(--muted2)">—</span></div>
+  <div class="level-item"><span class="level-lbl">Vanna Flow</span><span class="level-val" id="lv-vanna" style="color:var(--muted2)">—</span></div>
+</div>
 
-  <!-- Banner -->
-  <div class="banner" id="banner">
-    <div class="banner-icon" id="banner-icon">⚡</div>
-    <div class="banner-text">
-      <div class="banner-title">Bot Signal</div>
-      <div class="banner-main" id="banner-action">Connecting to Robinhood...</div>
+<!-- ─── Signal banner ─── -->
+<div class="banner">
+  <span id="ban-icon" style="font-size:16px">⚡</span>
+  <span class="banner-text" id="ban-text">Connecting to Robinhood...</span>
+  <span class="banner-badge b-flat" id="ban-badge">— FLAT</span>
+</div>
+
+<!-- ─── 3-column layout ─── -->
+<div class="layout">
+
+  <!-- LEFT: Vol Signal Cards -->
+  <div class="panel">
+    <div class="p-title">Vol Signals <span class="p-title-right">Karsan · Whaley · SpotGamma</span></div>
+    <div class="vol-grid">
+
+      <div class="vol-row">
+        <span class="vol-row-label">VIX Regime</span>
+        <span class="vol-row-val" id="vs-vix">—</span>
+        <span class="vol-row-sub" id="vs-vix-lbl">—</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-vix" style="width:0%"></div></div>
+      </div>
+
+      <div class="vol-row">
+        <span class="vol-row-label">Term Structure · Whaley</span>
+        <span class="vol-row-val" id="vs-ts">—</span>
+        <span class="vol-row-sub" id="vs-ts-sub">VIX / VIX3M slope</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-ts" style="width:50%;background:var(--blue)"></div></div>
+      </div>
+
+      <div class="vol-row">
+        <span class="vol-row-label">Vanna Flow · Karsan</span>
+        <span class="vol-row-val" id="vs-vanna">—</span>
+        <span class="vol-row-sub" id="vs-vanna-sub">VIX Δ → dealer hedging</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-vanna" style="width:50%"></div></div>
+      </div>
+
+      <div class="vol-row">
+        <span class="vol-row-label">VIX3M · Slope</span>
+        <span class="vol-row-val" id="vs-vix3m">—</span>
+        <span class="vol-row-sub" id="vs-slope-sub">93-day forward vol</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-slope" style="width:50%;background:var(--blue)"></div></div>
+      </div>
+
+      <div class="vol-row">
+        <span class="vol-row-label">GEX Total</span>
+        <span class="vol-row-val" id="vs-gex">—</span>
+        <span class="vol-row-sub" id="vs-gex-sub">+ = PIN  / − = TREND</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-gex" style="width:50%;background:var(--blue)"></div></div>
+      </div>
+
+      <div class="vol-row">
+        <span class="vol-row-label">Signal · All Gates</span>
+        <span class="vol-row-val" id="vs-sig" style="color:var(--muted2)">FLAT</span>
+        <span class="vol-row-sub" id="vs-sig-sub">Waiting for data</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-sig" style="width:0%"></div></div>
+      </div>
+
+      <div class="vol-row" style="background:var(--bg3);">
+        <span class="vol-row-label">Account · $10k Goal</span>
+        <span class="vol-row-val" id="vs-bal">$21.64</span>
+        <span class="vol-row-sub" id="vs-goal-sub">0.2% of goal</span>
+        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-goal" style="width:0.2%;background:var(--blue)"></div></div>
+      </div>
+
     </div>
-    <span class="banner-badge badge-flat" id="banner-badge">— FLAT</span>
-  </div>
+  </div><!-- /left -->
 
-  <!-- 6 signal cards -->
-  <div class="sig-grid">
-
-    <div class="sig-card">
-      <div class="sig-label">VIX Regime</div>
-      <div class="sig-val" id="vix-val">—</div>
-      <div class="sig-sub" id="vix-regime-lbl">—</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="vix-bar" style="width:0%"></div></div>
+  <!-- CENTER: GEX Ladder + Chart -->
+  <div class="panel center">
+    <div class="p-title">GEX Strike Ladder <span class="p-title-right" id="ladder-ts">—</span></div>
+    <div class="ladder-header">
+      <span>Strike</span><span>CALLS ▶</span><span>◀ PUTS</span><span>NET GEX</span>
+    </div>
+    <div class="ladder" id="ladder-body" style="flex:1;min-height:180px;">
+      <div style="text-align:center;color:var(--muted);padding:30px;font-size:11px;">
+        ⚡ GEX ladder loads when options chain is available<br>
+        <span style="font-size:9px;color:var(--muted);margin-top:6px;display:block">Bot scans chain every 60s · 9:30 AM – 4:00 PM ET</span>
+      </div>
     </div>
 
-    <div class="sig-card">
-      <div class="sig-label">Term Structure · Whaley</div>
-      <div class="sig-val" id="ts-val">—</div>
-      <div class="sig-sub" id="ts-sub">VIX / VIX3M slope</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="ts-bar" style="width:50%;background:var(--blue)"></div></div>
-    </div>
-
-    <div class="sig-card">
-      <div class="sig-label">Vanna Flow · Karsan</div>
-      <div class="sig-val" id="vanna-val">—</div>
-      <div class="sig-sub" id="vanna-sub">VIX Δ → dealer bid/sell</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="vanna-bar" style="width:50%;background:var(--muted)"></div></div>
-    </div>
-
-    <div class="sig-card">
-      <div class="sig-label">VIX3M / Slope</div>
-      <div class="sig-val" id="vix3m-val">—</div>
-      <div class="sig-sub" id="slope-sub">93-day forward vol</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="slope-bar" style="width:50%;background:var(--blue)"></div></div>
-    </div>
-
-    <div class="sig-card">
-      <div class="sig-label">Account · Goal $10k</div>
-      <div class="sig-val" id="bal-val">$21.64</div>
-      <div class="sig-sub" id="goal-sub">0.2% of goal</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="goal-bar" style="width:0.2%;background:var(--blue)"></div></div>
-    </div>
-
-    <div class="sig-card" id="card-sig">
-      <div class="sig-label">Signal Output</div>
-      <div class="sig-val" id="sig-val" style="color:var(--muted)">FLAT</div>
-      <div class="sig-sub" id="sig-sub">Waiting for data</div>
-      <div class="sig-bar-wrap"><div class="sig-bar" id="sig-bar" style="width:0%"></div></div>
-    </div>
-
-  </div>
-
-  <!-- Chart -->
-  <div class="chart-card">
-    <div class="chart-header">⚡ SPY 5-MIN CHART · RSI · MACD · Bollinger Bands</div>
-    <div class="tradingview-widget-container">
-      <div id="tradingview_chart"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-      <script type="text/javascript">
+    <div class="p-title" style="border-top:1px solid var(--border);">SPY 5-Min Chart <span class="p-title-right">RSI · MACD · BB</span></div>
+    <div class="chart-wrap">
+      <div id="tv_chart" style="height:100%;min-height:260px;"></div>
+      <script src="https://s3.tradingview.com/tv.js"></script>
+      <script>
       new TradingView.widget({
-        container_id:"tradingview_chart",symbol:"AMEX:SPY",interval:"5",
-        theme:"dark",style:"1",locale:"en",width:"100%",height:380,
+        container_id:"tv_chart",symbol:"AMEX:SPY",interval:"5",
+        theme:"dark",style:"1",locale:"en",width:"100%",height:"100%",
         hide_top_toolbar:false,save_image:false,
         studies:["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies"]
       });
       </script>
     </div>
-  </div>
+  </div><!-- /center -->
 
-</div>
+  <!-- RIGHT: Options Flow + Stats + Journal -->
+  <div class="panel">
 
-<!-- Sidebar -->
-<div class="sidebar">
-
-  <div class="card">
-    <div class="card-title">📊 Performance</div>
-    <div class="stats-grid">
-      <div class="stat-item"><div class="stat-label">Win Rate</div><div class="stat-val" id="stat-wr" style="color:var(--muted2)">—</div></div>
-      <div class="stat-item"><div class="stat-label">Total P&amp;L</div><div class="stat-val" id="stat-pnl" style="color:var(--muted2)">—</div></div>
-      <div class="stat-item"><div class="stat-label">Trades</div><div class="stat-val" id="stat-trades" style="color:var(--white)">0</div></div>
-      <div class="stat-item"><div class="stat-label">Streak</div><div class="stat-val" id="stat-streak" style="color:var(--muted2)">—</div></div>
-    </div>
-    <div style="margin-top:10px;">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)">
-        <span id="bal-display">Balance $21.64</span>
-        <span id="goal-pct-display">0.2% of $10k</span>
+    <!-- Net flow gauge -->
+    <div class="p-title">Options Flow <span class="p-title-right">$ premium weighted</span></div>
+    <div class="net-flow-wrap">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px;">
+        <span>▲ CALLS <span id="nf-call-pct" style="color:var(--green);font-weight:700">50%</span></span>
+        <span>PUTS ▼ <span id="nf-put-pct" style="color:var(--red);font-weight:700">50%</span></span>
       </div>
-      <div class="goal-bar-bg"><div class="goal-bar-fill" id="goal-bar2" style="width:0.2%"></div></div>
+      <div class="net-flow-bar">
+        <div class="nf-calls" id="nf-calls" style="width:50%"></div>
+        <div class="nf-puts"  id="nf-puts"  style="width:50%"></div>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <div class="card-title">🤖 Bot Status</div>
-    <div style="color:var(--muted2);font-size:12px;line-height:1.6" id="last-action">Connecting...</div>
-    <div style="margin-top:8px;font-size:10px;color:var(--muted)">Updated: <span id="market-ts">—</span></div>
-  </div>
+    <!-- Flow feed table -->
+    <div style="overflow-y:auto;flex:1;max-height:220px;">
+      <table class="flow-table">
+        <thead><tr><th>Time</th><th>Strike</th><th>Type</th><th>Prem $k</th></tr></thead>
+        <tbody id="flow-body">
+          <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Flow populates at market open</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-  <div class="card">
-    <div class="card-title">📉 Vol Surface</div>
-    <table class="vol-table" style="width:100%;border-collapse:collapse;">
-      <tr><td style="color:var(--muted)">VIX Spot</td><td id="vs-vix">—</td></tr>
-      <tr><td style="color:var(--muted)">VIX3M (est)</td><td id="vs-vix3m">—</td></tr>
-      <tr><td style="color:var(--muted)">TS Slope</td><td id="vs-slope">—</td></tr>
-      <tr><td style="color:var(--muted)">Structure</td><td id="vs-label">—</td></tr>
-      <tr><td style="color:var(--muted)">Vanna</td><td id="vs-vanna">—</td></tr>
-      <tr><td style="color:var(--muted)">Regime Gate</td><td id="vs-gate">—</td></tr>
-    </table>
-  </div>
+    <!-- Stats -->
+    <div class="p-title" style="border-top:1px solid var(--border);">Performance</div>
+    <div class="stats-block">
+      <div class="stat-row"><span class="stat-lbl">Win Rate</span><span class="stat-val" id="st-wr" style="color:var(--muted2)">—</span></div>
+      <div class="stat-row"><span class="stat-lbl">Total P&amp;L</span><span class="stat-val" id="st-pnl" style="color:var(--muted2)">—</span></div>
+      <div class="stat-row"><span class="stat-lbl">Trades</span><span class="stat-val" id="st-trades">0</span></div>
+      <div class="stat-row"><span class="stat-lbl">Streak</span><span class="stat-val" id="st-streak" style="color:var(--muted2)">—</span></div>
+      <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:9px;color:var(--muted)">
+        <span id="st-bal">Balance $21.64</span><span id="st-goal">0.2% of $10k</span>
+      </div>
+      <div class="goal-bar-bg"><div class="goal-bar-fill" id="goal-fill" style="width:0.2%"></div></div>
+    </div>
 
-  <div class="card">
-    <div class="card-title">📋 Recent Trades</div>
-    <table class="journal-table">
-      <thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>P&amp;L%</th><th>P&amp;L$</th></tr></thead>
-      <tbody id="journal-body"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px">No trades yet</td></tr></tbody>
-    </table>
-  </div>
+    <!-- Journal -->
+    <div class="p-title" style="border-top:1px solid var(--border);">Trade Journal</div>
+    <div style="overflow-y:auto;">
+      <table class="journal-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>P&amp;L%</th><th>P&amp;L$</th></tr></thead>
+        <tbody id="journal-body">
+          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px">No trades yet</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-</div>
-</div>
+  </div><!-- /right -->
+</div><!-- /layout -->
 
 <script>
-// Clock
+// ── Clock ──────────────────────────────────────────────────────────────────
 function updateClock(){
   const et=new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
-  setText("clock",[et.getHours(),et.getMinutes(),et.getSeconds()].map(n=>String(n).padStart(2,"0")).join(":")+' ET');
+  const p=n=>String(n).padStart(2,"0");
+  setText("clock",`${p(et.getHours())}:${p(et.getMinutes())}:${p(et.getSeconds())} ET`);
 }
 setInterval(updateClock,1000); updateClock();
 
-// Countdown
-let cd=3; // fetch quickly on first load
+// ── Countdown ──────────────────────────────────────────────────────────────
+let cd=5;
 setInterval(()=>{
   cd--;
   const el=document.getElementById("cd");
@@ -256,7 +332,7 @@ setInterval(()=>{
   if(cd<=0){ fetchState(); cd=60; }
 },1000);
 
-// Signal logic
+// ── Signal logic ───────────────────────────────────────────────────────────
 function computeSignal(g){
   if(!g.vix||g.vix>=30) return "flat";
   if((g.ts_label||"contango")==="backwardation") return "flat";
@@ -266,15 +342,58 @@ function computeSignal(g){
   return "flat";
 }
 
-// Helpers
-function setText(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
-function setCol(id,c){const el=document.getElementById(id);if(el)el.style.color=c;}
-function setBar(id,pct,color){
-  const el=document.getElementById(id);
-  if(el){el.style.width=Math.min(Math.max(pct,0),100)+"%";if(color)el.style.background=color;}
+// ── Helpers ────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function setText(id,v){const el=$(id);if(el)el.textContent=v;}
+function setHTML(id,v){const el=$(id);if(el)el.innerHTML=v;}
+function setColor(id,c){const el=$(id);if(el)el.style.color=c;}
+function setWidth(id,pct){const el=$(id);if(el)el.style.width=Math.min(Math.max(pct,0),100)+"%";}
+function setBar(id,pct,color){const el=$(id);if(el){el.style.width=Math.min(Math.max(pct,0),100)+"%";if(color)el.style.background=color;}}
+
+// ── GEX Ladder renderer ────────────────────────────────────────────────────
+function renderLadder(ladder, g){
+  if(!ladder||!ladder.length) return;
+  const spot=g.spot||0, flip=g.gamma_flip||0, cwall=g.call_wall||0, pwall=g.put_wall||0, mp=g.max_pain||0;
+  // Find max abs GEX for bar scaling
+  const maxGex=Math.max(...ladder.map(r=>Math.max(Math.abs(r.call_gex||0),Math.abs(r.put_gex||0))),0.001);
+  // Sort descending by strike
+  const rows=[...ladder].sort((a,b)=>b.strike-a.strike);
+  const atSpot=rows.reduce((best,r)=>Math.abs(r.strike-spot)<Math.abs(best.strike-spot)?r:best,rows[0]);
+  let html="";
+  for(const r of rows){
+    const s=r.strike;
+    const isSpot=s===atSpot.strike;
+    const isFlip=s===flip;
+    const isCwall=s===cwall;
+    const isPwall=s===pwall;
+    const isMP=s===mp;
+    let cls="ladder-row";
+    if(isSpot) cls+=" at-spot";
+    else if(isFlip) cls+=" at-flip";
+    else if(isCwall) cls+=" at-cwall";
+    else if(isPwall) cls+=" at-pwall";
+    const callW=Math.round((r.call_gex||0)/maxGex*100);
+    const putW =Math.round((r.put_gex||0)/maxGex*100);
+    const net=r.net_gex||0;
+    const netClr=net>0?"var(--green)":net<0?"var(--red)":"var(--muted)";
+    let tags="";
+    if(isSpot)  tags+=`<span class="row-tag tag-spot">SPY</span>`;
+    if(isFlip)  tags+=`<span class="row-tag tag-flip">FLIP</span>`;
+    if(isCwall) tags+=`<span class="row-tag tag-cwall">CWALL</span>`;
+    if(isPwall) tags+=`<span class="row-tag tag-pwall">PWALL</span>`;
+    if(isMP)    tags+=`<span class="row-tag tag-mp">MP</span>`;
+    html+=`<div class="${cls}">
+      <div class="strike-cell">${s}${tags}</div>
+      <div class="bar-cell-r"><div class="gex-bar call-bar" style="width:${callW}%;height:10px;"></div></div>
+      <div class="bar-cell-l"><div class="gex-bar put-bar"  style="width:${putW}%;height:10px;"></div></div>
+      <div class="net-cell" style="color:${netClr}">${net>0?"+":""}${net.toFixed(2)}M</div>
+    </div>`;
+  }
+  setHTML("ladder-body",html);
+  if(g.last_updated) setText("ladder-ts","Updated "+String(g.last_updated).slice(11,16)+" ET");
 }
 
-// Main fetch
+// ── Main fetch ─────────────────────────────────────────────────────────────
 async function fetchState(){
   try{
     const r=await fetch("/api/state");
@@ -283,150 +402,154 @@ async function fetchState(){
     const g=d.gex||{}, s=d.stats||{};
 
     // Pill
-    const pill=document.getElementById("conn-pill");
-    if(pill){pill.className="pill pill-live";pill.innerHTML='<span class="dot-pulse"></span>LIVE';}
+    const pill=$("pill");
+    if(pill){pill.className="pill pill-live";pill.innerHTML='<span class="dot"></span>LIVE';}
 
-    // Header
-    if(g.spot){setText("hdr-spy","$"+Number(g.spot).toFixed(2));}
+    // Header chips
+    if(g.spot){ setText("h-spy","$"+Number(g.spot).toFixed(2)); setText("lv-spot","$"+Number(g.spot).toFixed(2)); }
     if(g.vix){
       const vc=g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
-      setText("hdr-vix",Number(g.vix).toFixed(2)); setCol("hdr-vix",vc);
+      setText("h-vix",Number(g.vix).toFixed(2)); setColor("h-vix",vc);
     }
-    if(s.balance) setText("hdr-bal","$"+Number(s.balance).toFixed(2));
-
-    // VIX Regime card
-    if(g.vix){
-      const vix=Number(g.vix);
-      const vc=vix<18?"var(--green)":vix<25?"var(--amber)":"var(--red)";
-      const lbl=vix<13?"Ultra-Low":vix<18?"Normal / Bull":vix<25?"Elevated — Caution":vix<35?"High Vol / Fear":"CRISIS";
-      setText("vix-val",vix.toFixed(2)); setCol("vix-val",vc);
-      setText("vix-regime-lbl",lbl+(vix<30?" · Gates ✅":" · BLOCKED ❌"));
-      setCol("vix-regime-lbl",vix<30?"var(--green)":"var(--red)");
-      setBar("vix-bar",Math.min(vix/35*100,100),vc);
+    if(g.gex_total_m!=null){
+      const gc=g.gex_total_m>0?"var(--green)":g.gex_total_m<0?"var(--red)":"var(--muted2)";
+      setText("h-gex",(g.gex_total_m>0?"+":"")+Number(g.gex_total_m).toFixed(1)+"M"); setColor("h-gex",gc);
     }
+    if(s.balance) setText("h-bal","$"+Number(s.balance).toFixed(2));
 
-    // Term Structure card
-    if(g.ts_label){
-      const m={deep_contango:["DEEP CONTANGO","var(--green)",90],contango:["CONTANGO","var(--blue)",65],backwardation:["BACKWARDATION ⛔","var(--red)",10]};
-      const [lbl,clr,pct]=m[g.ts_label]||["—","var(--muted)",50];
-      setText("ts-val",lbl); setCol("ts-val",clr);
-      setText("ts-sub",g.ts_slope!=null?"Slope: "+(g.ts_slope*100).toFixed(1)+"%":"—");
-      setBar("ts-bar",pct,clr);
+    // Key levels
+    if(g.call_wall)  setText("lv-cwall","$"+Math.round(g.call_wall));
+    if(g.gamma_flip) setText("lv-flip","$"+Math.round(g.gamma_flip));
+    if(g.max_pain)   setText("lv-mp","$"+Math.round(g.max_pain));
+    if(g.put_wall)   setText("lv-pwall","$"+Math.round(g.put_wall));
+    if(g.vix_regime_label){
+      const vc=g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
+      setText("lv-regime",g.vix_regime_label); setColor("lv-regime",vc);
     }
-
-    // Vanna Flow card
-    if(g.vanna_label){
-      const m={
-        strong_vanna_bid:["STRONG BID ▲","var(--green)",95],
-        vanna_bid:["VANNA BID ▲","#88ffcc",75],
-        neutral:["NEUTRAL —","var(--muted2)",50],
-        vanna_headwind:["HEADWIND ▼","var(--amber)",28],
-        vanna_sell:["VANNA SELL ▼","var(--red)",8],
-      };
-      const [lbl,clr,pct]=m[g.vanna_label]||["—","var(--muted)",50];
-      setText("vanna-val",lbl); setCol("vanna-val",clr);
-      setText("vanna-sub","Mult: ×"+(g.vanna_mult||1).toFixed(2));
-      setBar("vanna-bar",pct,clr);
-    }
-
-    // VIX3M card
-    if(g.vix3m){
-      setText("vix3m-val",Number(g.vix3m).toFixed(2)); setCol("vix3m-val","var(--blue)");
-      if(g.ts_slope!=null){
-        const sl=g.ts_slope;
-        setText("slope-sub","Slope "+(sl>=0?"+":"")+(sl*100).toFixed(1)+"%");
-        setBar("slope-bar",Math.min(Math.max((sl+0.05)*600,0),100),sl>0?"var(--blue)":"var(--red)");
-      }
-    }
-
-    // Account card
-    if(s.balance!=null){
-      const b=Number(s.balance);
-      const gp=s.goal_pct||0;
-      setText("bal-val","$"+b.toFixed(2)); setCol("bal-val","var(--white)");
-      setText("goal-sub",gp.toFixed(1)+"% of $10,000 goal");
-      setBar("goal-bar",gp,"var(--blue)");
-      setText("bal-display","Balance $"+b.toFixed(2));
-      setText("goal-pct-display",gp.toFixed(1)+"% of $10k");
-      setBar("goal-bar2",Math.min(gp,100),null);
-    }
-
-    // Signal card + banner
-    const sig=computeSignal(g);
-    const sm={
-      call:["LONG CALL ▲","var(--green)",100,"▲ CALL","badge-call","call","📈"],
-      put: ["LONG PUT ▼","var(--red)",100,"▼ PUT","badge-put","put","📉"],
-      flat:["FLAT","var(--muted)",0,"— FLAT","badge-flat","","⚡"],
-    };
-    const [sv,sc,bp,bbt,bbc,bc,bi]=sm[sig];
-    setText("sig-val",sv); setCol("sig-val",sc);
-    setText("sig-sub",sig==="flat"?"Waiting for alignment":"All gates green ✅");
-    setBar("sig-bar",bp,sc);
-    setText("hdr-sig",bbt); setCol("hdr-sig",sc);
-    const ban=document.getElementById("banner");
-    if(ban) ban.className="banner "+(bc||"");
-    setText("banner-icon",bi);
-    setText("banner-action",g.last_action||"—");
-    const bb=document.getElementById("banner-badge");
-    if(bb){bb.textContent=bbt;bb.className="banner-badge "+bbc;}
-    const cs=document.getElementById("card-sig");
-    if(cs) cs.className="sig-card"+(sig==="call"?" active-call":sig==="put"?" active-put":"");
-
-    // Bot status + timestamps
-    setText("last-action",g.last_action||"—");
-    if(g.last_updated) setText("market-ts",String(g.last_updated).slice(11,19)+" ET");
-
-    // Vol surface sidebar
-    if(g.vix)   setText("vs-vix",Number(g.vix).toFixed(2));
-    if(g.vix3m) setText("vs-vix3m",Number(g.vix3m).toFixed(2)+" (est)");
-    if(g.ts_slope!=null) setText("vs-slope",(g.ts_slope*100).toFixed(1)+"%");
     if(g.ts_label){
       const tc={deep_contango:"var(--green)",contango:"var(--blue)",backwardation:"var(--red)"};
-      setText("vs-label",(g.ts_label||"").replace(/_/g," ").toUpperCase());
-      setCol("vs-label",tc[g.ts_label]||"var(--muted2)");
+      setText("lv-ts",(g.ts_label||"").replace(/_/g," ").toUpperCase()); setColor("lv-ts",tc[g.ts_label]||"var(--muted2)");
     }
     if(g.vanna_label){
-      const vc2={strong_vanna_bid:"var(--green)",vanna_bid:"#88ffcc",neutral:"var(--muted2)",vanna_headwind:"var(--amber)",vanna_sell:"var(--red)"};
-      setText("vs-vanna",(g.vanna_label||"").replace(/_/g," "));
-      setCol("vs-vanna",vc2[g.vanna_label]||"var(--muted2)");
-    }
-    if(g.vix){
-      setText("vs-gate",g.vix<30?"✅ Open":"❌ Blocked");
-      setCol("vs-gate",g.vix<30?"var(--green)":"var(--red)");
+      const vm={strong_vanna_bid:["STRONG BID","var(--green)"],vanna_bid:["VANNA BID","#88ffcc"],neutral:["NEUTRAL","var(--muted2)"],vanna_headwind:["HEADWIND","var(--amber)"],vanna_sell:["VANNA SELL","var(--red)"]};
+      const [lbl,clr]=vm[g.vanna_label]||["—","var(--muted2)"];
+      setText("lv-vanna",lbl); setColor("lv-vanna",clr);
     }
 
-    // Performance stats
+    // Signal
+    const sig=computeSignal(g);
+    const sm={
+      call:["▲ CALL","var(--green)",100,"b-call","📈 LONG CALL — Vanna bid + contango aligned"],
+      put: ["▼ PUT","var(--red)",100,"b-put","📉 LONG PUT — Vanna selling + dealer flow bearish"],
+      flat:["FLAT","var(--muted2)",0,"b-flat","⚡ "+((g.last_action)||"Waiting for signal alignment")],
+    };
+    const [sv,sc,sbp,sbc,sbt]=sm[sig];
+    setText("h-sig",sv); setColor("h-sig",sc);
+    setText("vs-sig",sv); setColor("vs-sig",sc);
+    setText("vs-sig-sub",sig==="flat"?"Waiting for alignment":"All gates green ✅");
+    setBar("vb-sig",sbp,sc);
+    const bb=$("ban-badge");
+    if(bb){bb.textContent=sv;bb.className="banner-badge "+sbc;}
+    setText("ban-text",sbt);
+    setText("ban-icon",sig==="call"?"📈":sig==="put"?"📉":"⚡");
+
+    // Vol signal cards
+    if(g.vix){
+      const vix=Number(g.vix), vc=vix<18?"var(--green)":vix<25?"var(--amber)":"var(--red)";
+      setText("vs-vix",vix.toFixed(2)); setColor("vs-vix",vc);
+      setText("vs-vix-lbl",(g.vix_regime_label||"—")+(vix<30?" · Gates ✅":" · BLOCKED ❌"));
+      setBar("vb-vix",Math.min(vix/35*100,100),vc);
+    }
+    if(g.ts_label){
+      const m={deep_contango:["DEEP CONTANGO","var(--green)",90],contango:["CONTANGO","var(--blue)",65],backwardation:["BACKW. ⛔","var(--red)",10]};
+      const [lbl,clr,pct]=m[g.ts_label]||["—","var(--muted)",50];
+      setText("vs-ts",lbl); setColor("vs-ts",clr);
+      setText("vs-ts-sub",g.ts_slope!=null?"Slope "+(g.ts_slope*100).toFixed(1)+"%":"—");
+      setBar("vb-ts",pct,clr);
+    }
+    if(g.vanna_label){
+      const m={strong_vanna_bid:["STRONG BID ▲","var(--green)",95],vanna_bid:["VANNA BID ▲","#88ffcc",75],neutral:["NEUTRAL —","var(--muted2)",50],vanna_headwind:["HEADWIND ▼","var(--amber)",28],vanna_sell:["VANNA SELL ▼","var(--red)",8]};
+      const [lbl,clr,pct]=m[g.vanna_label]||["—","var(--muted)",50];
+      setText("vs-vanna",lbl); setColor("vs-vanna",clr);
+      setText("vs-vanna-sub","Mult ×"+(g.vanna_mult||1).toFixed(2));
+      setBar("vb-vanna",pct,clr);
+    }
+    if(g.vix3m){
+      setText("vs-vix3m",Number(g.vix3m).toFixed(2)+" (est)"); setColor("vs-vix3m","var(--blue)");
+      if(g.ts_slope!=null){
+        const sl=g.ts_slope;
+        setText("vs-slope-sub","Slope "+(sl>=0?"+":"")+(sl*100).toFixed(1)+"%");
+        setBar("vb-slope",Math.min(Math.max((sl+0.05)*600,0),100),sl>0?"var(--blue)":"var(--red)");
+      }
+    }
+    if(g.gex_total_m!=null){
+      const gc=g.gex_total_m>0?"var(--green)":g.gex_total_m<0?"var(--red)":"var(--muted2)";
+      setText("vs-gex",(g.gex_total_m>0?"+":"")+Number(g.gex_total_m).toFixed(1)+"M"); setColor("vs-gex",gc);
+      setText("vs-gex-sub",g.gex_total_m>0?"PIN regime — dampening":"TREND regime — amplifying");
+      setBar("vb-gex",50+(g.gex_total_m>0?20:-20),gc);
+    }
+    if(s.balance!=null){
+      const b=Number(s.balance), gp=s.goal_pct||0;
+      setText("vs-bal","$"+b.toFixed(2));
+      setText("vs-goal-sub",gp.toFixed(1)+"% of $10,000");
+      setBar("vb-goal",gp,"var(--blue)");
+    }
+
+    // Net flow gauge
+    const cp=g.net_flow_call_pct||50, pp=100-cp;
+    const ncalls=$("nf-calls"), nputs=$("nf-puts");
+    if(ncalls){ncalls.style.width=cp+"%"; if(cp>5) ncalls.textContent=Math.round(cp)+"%";}
+    if(nputs) {nputs.style.width=pp+"%";  if(pp>5) nputs.textContent=Math.round(pp)+"%";}
+    setText("nf-call-pct",Math.round(cp)+"%"); setText("nf-put-pct",Math.round(pp)+"%");
+
+    // Flow table
+    if(g.flow_feed&&g.flow_feed.length){
+      const rows=g.flow_feed.map(f=>{
+        const tc=f.type==="call"?"flow-call":"flow-put";
+        return `<tr><td style="color:var(--muted2)">${f.time||"—"}</td><td style="color:var(--white)">$${f.strike}</td><td class="${tc}">${(f.type||"").toUpperCase()}</td><td class="flow-prem">$${f.premium_k}k</td></tr>`;
+      }).join("");
+      setHTML("flow-body",rows);
+    }
+
+    // GEX Ladder
+    if(g.strike_ladder&&g.strike_ladder.length) renderLadder(g.strike_ladder, g);
+
+    // Stats
     if(s.win_rate!=null){
       const wr=Math.round(s.win_rate*100);
-      setText("stat-wr",wr+"%");
-      setCol("stat-wr",wr>55?"var(--green)":wr>40?"var(--amber)":"var(--red)");
+      setText("st-wr",wr+"%"); setColor("st-wr",wr>55?"var(--green)":wr>40?"var(--amber)":"var(--red)");
     }
     if(s.total_pnl_usd!=null){
       const v=s.total_pnl_usd;
-      setText("stat-pnl",(v>=0?"$+":"$")+Number(v).toFixed(2));
-      setCol("stat-pnl",v>=0?"var(--green)":"var(--red)");
+      setText("st-pnl",(v>=0?"$+":"$")+Number(v).toFixed(2));
+      setColor("st-pnl",v>=0?"var(--green)":"var(--red)");
     }
-    if(s.total_trades!=null) setText("stat-trades",s.total_trades);
+    if(s.total_trades!=null) setText("st-trades",s.total_trades);
     if(s.streak_type){
-      setText("stat-streak",s.streak+"× "+s.streak_type.toUpperCase());
-      setCol("stat-streak",s.streak_type==="win"?"var(--green)":"var(--red)");
+      setText("st-streak",s.streak+"× "+s.streak_type.toUpperCase());
+      setColor("st-streak",s.streak_type==="win"?"var(--green)":"var(--red)");
+    }
+    if(s.balance!=null){
+      const b=Number(s.balance), gp=s.goal_pct||0;
+      setText("st-bal","Balance $"+b.toFixed(2));
+      setText("st-goal",gp.toFixed(1)+"% of $10k");
+      const gf=$("goal-fill"); if(gf) gf.style.width=Math.min(gp,100)+"%";
     }
 
     // Journal
     if(d.journal&&d.journal.length){
       const rows=d.journal.slice().reverse().map(t=>{
-        const ty=t.opt_type==="call"?'<span style="color:var(--green);font-weight:700">CALL</span>':'<span style="color:var(--red);font-weight:700">PUT</span>';
+        const ty=t.opt_type==="call"?'<span class="flow-call">CALL</span>':'<span class="flow-put">PUT</span>';
         const pp=t.pnl_pct!=null?`<span class="${t.pnl_pct>0?"j-win":"j-loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}%</span>`:t.exit_price==null?'<span class="j-open">OPEN</span>':'—';
         const pu=t.pnl_usd!=null?`<span class="${t.pnl_usd>0?"j-win":"j-loss"}">$${t.pnl_usd>0?"+":""}${Number(t.pnl_usd).toFixed(2)}</span>`:'—';
         return `<tr><td style="color:var(--muted2)">${t.date||""}</td><td>${ty}</td><td>$${t.strike||""}</td><td>${pp}</td><td>${pu}</td></tr>`;
       }).join("");
-      const jb=document.getElementById("journal-body");
-      if(jb) jb.innerHTML=rows;
+      setHTML("journal-body",rows);
     }
 
   }catch(e){
-    const p=document.getElementById("conn-pill");
-    if(p){p.className="pill pill-offline";p.textContent="OFFLINE";}
+    const p=$("pill"); if(p){p.className="pill pill-off";p.textContent="OFFLINE";}
+    console.error(e);
   }
 }
 
