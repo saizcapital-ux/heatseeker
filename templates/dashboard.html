@@ -3,557 +3,250 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HEATSEEKER · Vol Signal</title>
+<title>HEATSEEKER</title>
 <style>
-:root{
-  --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--bg4:#22222e;--bg5:#2a2a3a;
-  --green:#00ff88;--red:#ff3366;--amber:#ffaa00;--blue:#4488ff;--purple:#aa55ff;
-  --white:#e8e8f0;--muted:#555570;--muted2:#7777aa;--border:#1e1e2e;
-  --call-bg:rgba(0,255,136,.07);--put-bg:rgba(255,51,102,.07);
-}
-*{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;background:var(--bg);color:var(--white);font-family:'SF Mono','Fira Mono',monospace;font-size:12px;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0f;color:#e8e8f0;font-family:'SF Mono',monospace;min-height:100vh;padding:16px}
+.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.logo{font-size:18px;font-weight:900;color:#ffaa00;letter-spacing:3px}
+.live{font-size:11px;color:#00ff88;background:#051505;border:1px solid #00ff88;padding:3px 10px;border-radius:20px}
+.clock{font-size:11px;color:#666680}
 
-/* ─── Header ─── */
-.hdr{display:flex;align-items:center;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);height:44px;padding:0 12px;overflow:hidden;}
-.hdr-logo{font-size:13px;font-weight:900;color:var(--amber);letter-spacing:3px;display:flex;align-items:center;gap:6px;padding-right:16px;border-right:1px solid var(--border);margin-right:16px;white-space:nowrap;}
-.hdr-logo svg{width:14px;height:14px;fill:var(--amber);}
-.hdr-chip{display:flex;flex-direction:column;align-items:center;padding:0 14px;border-right:1px solid var(--border);min-width:80px;}
-.hdr-chip-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:1px;}
-.hdr-chip-val{font-size:14px;font-weight:700;color:var(--white);}
-.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
-.acct{font-size:9px;color:var(--muted2);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
-.clock{font-size:11px;color:var(--muted2);min-width:90px;text-align:right;}
-.pill{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;}
-.pill-live{background:#051505;border:1px solid var(--green);color:var(--green);}
-.pill-off{background:#150505;border:1px solid var(--red);color:var(--red);}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
-.cd{font-size:9px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:3px;border:1px solid var(--border);}
+/* Signal box — the main thing */
+.signal-box{border-radius:12px;padding:24px;margin-bottom:16px;text-align:center;border:2px solid #2a2a3a;background:#111118}
+.signal-box.call{border-color:#00ff88;background:#051505}
+.signal-box.put{border-color:#ff3366;background:#150508}
+.signal-box.flat{border-color:#2a2a3a;background:#111118}
+.sig-label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#666680;margin-bottom:8px}
+.sig-main{font-size:48px;font-weight:900;line-height:1}
+.sig-call{color:#00ff88}
+.sig-put{color:#ff3366}
+.sig-flat{color:#444460}
+.sig-sub{font-size:13px;color:#888899;margin-top:8px}
 
-/* ─── Key levels bar ─── */
-.levels{display:flex;align-items:center;gap:0;background:var(--bg3);border-bottom:1px solid var(--border);height:34px;padding:0 12px;overflow-x:auto;}
-.level-item{display:flex;flex-direction:column;align-items:center;padding:0 16px;border-right:1px solid var(--border);min-width:110px;}
-.level-item:last-child{border-right:none;}
-.level-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;}
-.level-val{font-size:12px;font-weight:700;}
-.lv-call{color:var(--green);}
-.lv-put{color:var(--red);}
-.lv-flip{color:var(--amber);}
-.lv-mp{color:var(--purple);}
-.lv-gex{color:var(--blue);}
-.lv-neutral{color:var(--white);}
+/* Price row */
+.prices{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.price-card{background:#111118;border:1px solid #1e1e2e;border-radius:8px;padding:14px;text-align:center}
+.pc-label{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#555570;margin-bottom:4px}
+.pc-val{font-size:22px;font-weight:700}
 
-/* ─── Signal banner ─── */
-.banner{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);}
-.banner-text{flex:1;font-size:11px;color:var(--muted2);}
-.banner-badge{padding:4px 14px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.5px;}
-.b-call{background:rgba(0,255,136,.12);color:var(--green);border:1px solid rgba(0,255,136,.3);}
-.b-put{background:rgba(255,51,102,.12);color:var(--red);border:1px solid rgba(255,51,102,.3);}
-.b-flat{background:var(--bg4);color:var(--muted2);border:1px solid var(--border);}
+/* Status card */
+.status-card{background:#111118;border:1px solid #1e1e2e;border-radius:8px;padding:14px;margin-bottom:12px}
+.status-title{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#555570;margin-bottom:8px}
+.status-text{font-size:12px;color:#888899;line-height:1.6}
+.status-updated{font-size:10px;color:#444460;margin-top:6px}
 
-/* ─── Main layout ─── */
-.layout{display:grid;grid-template-columns:280px 1fr 300px;height:calc(100vh - 112px);overflow:hidden;}
-@media(max-width:1100px){.layout{grid-template-columns:240px 1fr;}}
-@media(max-width:800px){.layout{grid-template-columns:1fr;height:auto;}}
+/* Vol signals row */
+.vol-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.vol-chip{background:#111118;border:1px solid #1e1e2e;border-radius:8px;padding:10px 12px}
+.vc-label{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#555570;margin-bottom:3px}
+.vc-val{font-size:13px;font-weight:700}
 
-/* ─── Panel commons ─── */
-.panel{border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;}
-.panel:last-child{border-right:none;}
-.p-title{font-size:8px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);padding:10px 12px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-.p-title-right{font-size:8px;color:var(--muted);font-weight:400;letter-spacing:.5px;}
-
-/* ─── Left panel: Vol signals ─── */
-.vol-grid{display:flex;flex-direction:column;gap:0;}
-.vol-row{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px;}
-.vol-row-label{font-size:8px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);}
-.vol-row-val{font-size:16px;font-weight:700;color:var(--white);}
-.vol-row-sub{font-size:10px;color:var(--muted2);}
-.vol-bar-wrap{height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden;}
-.vol-bar{height:100%;border-radius:2px;transition:width .5s,background .5s;}
-
-/* ─── Center panel: GEX Ladder + Chart ─── */
-.center{display:flex;flex-direction:column;}
-.chart-wrap{flex:1;min-height:260px;background:var(--bg);}
-
-/* GEX Ladder */
-.ladder{overflow-y:auto;}
-.ladder-header{display:grid;grid-template-columns:60px 1fr 1fr 70px;gap:0;padding:5px 10px;border-bottom:1px solid var(--border);}
-.ladder-header span{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
-.ladder-header span:nth-child(2){text-align:right;color:var(--green);}
-.ladder-header span:nth-child(3){text-align:left;color:var(--red);}
-.ladder-header span:nth-child(4){text-align:right;}
-.ladder-row{display:grid;grid-template-columns:60px 1fr 1fr 70px;gap:0;padding:3px 10px;border-bottom:1px solid rgba(30,30,46,.6);align-items:center;position:relative;}
-.ladder-row:hover{background:var(--bg3);}
-.ladder-row.at-spot{background:rgba(68,136,255,.06);border-left:2px solid var(--blue);}
-.ladder-row.at-flip{background:rgba(255,170,0,.05);border-left:2px solid var(--amber);}
-.ladder-row.at-cwall{background:rgba(0,255,136,.05);border-left:2px solid var(--green);}
-.ladder-row.at-pwall{background:rgba(255,51,102,.05);border-left:2px solid var(--red);}
-.strike-cell{font-size:11px;font-weight:700;color:var(--muted2);display:flex;align-items:center;gap:4px;}
-.row-tag{font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;letter-spacing:.5px;}
-.tag-spot{background:var(--blue);color:#fff;}
-.tag-flip{background:var(--amber);color:#000;}
-.tag-cwall{background:var(--green);color:#000;}
-.tag-pwall{background:var(--red);color:#fff;}
-.tag-mp{background:var(--purple);color:#fff;}
-.bar-cell-r{display:flex;justify-content:flex-end;align-items:center;padding-right:4px;}
-.bar-cell-l{display:flex;justify-content:flex-start;align-items:center;padding-left:4px;}
-.gex-bar{height:10px;border-radius:2px;min-width:2px;}
-.call-bar{background:linear-gradient(90deg,transparent,var(--green));border-radius:2px 0 0 2px;}
-.put-bar{background:linear-gradient(90deg,var(--red),transparent);border-radius:0 2px 2px 0;}
-.net-cell{font-size:10px;font-weight:700;text-align:right;}
-
-/* ─── Right panel: Flow + Stats ─── */
-.flow-table{width:100%;border-collapse:collapse;}
-.flow-table th{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;}
-.flow-table td{font-size:10px;padding:5px 8px;border-bottom:1px solid rgba(30,30,46,.5);}
-.flow-call{color:var(--green);}
-.flow-put{color:var(--red);}
-.flow-prem{font-weight:700;color:var(--white);}
-
-.net-flow-wrap{padding:10px 12px;border-bottom:1px solid var(--border);}
-.net-flow-bar{height:16px;background:var(--bg5);border-radius:3px;overflow:hidden;display:flex;margin-top:4px;}
-.nf-calls{background:linear-gradient(90deg,var(--green),rgba(0,255,136,.5));border-radius:3px 0 0 3px;display:flex;align-items:center;padding-left:6px;font-size:9px;font-weight:700;color:#000;transition:width .5s;}
-.nf-puts{background:linear-gradient(90deg,rgba(255,51,102,.5),var(--red));border-radius:0 3px 3px 0;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-size:9px;font-weight:700;color:#fff;transition:width .5s;}
-
-/* ─── Stats section ─── */
-.stats-block{padding:10px 12px;border-bottom:1px solid var(--border);}
-.stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;}
-.stat-lbl{font-size:9px;color:var(--muted);}
-.stat-val{font-size:11px;font-weight:700;}
-.goal-bar-bg{height:4px;background:var(--bg5);border-radius:2px;overflow:hidden;margin-top:6px;}
-.goal-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:2px;transition:width .5s;}
-
-/* ─── Journal ─── */
-.journal-table{width:100%;border-collapse:collapse;}
-.journal-table th{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;}
-.journal-table td{font-size:10px;padding:5px 8px;border-bottom:1px solid rgba(30,30,46,.5);}
-.j-win{color:var(--green);font-weight:700;}
-.j-loss{color:var(--red);font-weight:700;}
-.j-open{color:var(--amber);}
+/* Journal */
+.journal-card{background:#111118;border:1px solid #1e1e2e;border-radius:8px;padding:14px}
+.j-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a1a24;font-size:11px}
+.j-row:last-child{border-bottom:none}
+.j-date{color:#555570;min-width:55px}
+.j-type-call{color:#00ff88;font-weight:700;min-width:35px}
+.j-type-put{color:#ff3366;font-weight:700;min-width:35px}
+.j-strike{color:#888899;min-width:50px}
+.j-pnl-win{color:#00ff88;font-weight:700;margin-left:auto}
+.j-pnl-loss{color:#ff3366;font-weight:700;margin-left:auto}
+.j-open{color:#ffaa00;font-weight:700;margin-left:auto}
+.j-empty{color:#444460;text-align:center;padding:12px;font-size:11px}
 </style>
 </head>
 <body>
 
-<!-- ─── Header ─── -->
 <div class="hdr">
-  <div class="hdr-logo">
-    <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-    HEATSEEKER
-  </div>
-  <div class="hdr-chip"><span class="hdr-chip-lbl">SPY</span><span class="hdr-chip-val" id="h-spy">—</span></div>
-  <div class="hdr-chip"><span class="hdr-chip-lbl">VIX</span><span class="hdr-chip-val" id="h-vix" style="color:var(--muted2)">—</span></div>
-  <div class="hdr-chip"><span class="hdr-chip-lbl">Signal</span><span class="hdr-chip-val" id="h-sig" style="color:var(--muted2)">FLAT</span></div>
-  <div class="hdr-chip"><span class="hdr-chip-lbl">GEX</span><span class="hdr-chip-val" id="h-gex" style="color:var(--muted2)">—</span></div>
-  <div class="hdr-chip"><span class="hdr-chip-lbl">Balance</span><span class="hdr-chip-val" id="h-bal">$21.64</span></div>
-  <div class="hdr-right">
-    <span class="acct">Acct 634079917</span>
+  <div class="logo">⚡ HEATSEEKER</div>
+  <div style="display:flex;align-items:center;gap:12px">
     <span class="clock" id="clock">—</span>
-    <span class="pill pill-live" id="pill"><span class="dot"></span>LIVE</span>
-    <span class="cd" id="cd">↻ 60s</span>
+    <span class="live" id="pill">● LIVE</span>
   </div>
 </div>
 
-<!-- ─── Key levels bar ─── -->
-<div class="levels">
-  <div class="level-item"><span class="level-lbl">Call Wall</span><span class="level-val lv-call" id="lv-cwall">—</span></div>
-  <div class="level-item"><span class="level-lbl">Gamma Flip</span><span class="level-val lv-flip" id="lv-flip">—</span></div>
-  <div class="level-item"><span class="level-lbl">SPY Now</span><span class="level-val lv-neutral" id="lv-spot">—</span></div>
-  <div class="level-item"><span class="level-lbl">Max Pain</span><span class="level-val lv-mp" id="lv-mp">—</span></div>
-  <div class="level-item"><span class="level-lbl">Put Wall</span><span class="level-val lv-put" id="lv-pwall">—</span></div>
-  <div class="level-item"><span class="level-lbl">VIX Regime</span><span class="level-val" id="lv-regime" style="color:var(--muted2)">—</span></div>
-  <div class="level-item"><span class="level-lbl">Term Structure</span><span class="level-val" id="lv-ts" style="color:var(--muted2)">—</span></div>
-  <div class="level-item"><span class="level-lbl">Vanna Flow</span><span class="level-val" id="lv-vanna" style="color:var(--muted2)">—</span></div>
+<!-- THE SIGNAL -->
+<div class="signal-box flat" id="sig-box">
+  <div class="sig-label">Bot Signal</div>
+  <div class="sig-main sig-flat" id="sig-main">FLAT</div>
+  <div class="sig-sub" id="sig-sub">Connecting...</div>
 </div>
 
-<!-- ─── Signal banner ─── -->
-<div class="banner">
-  <span id="ban-icon" style="font-size:16px">⚡</span>
-  <span class="banner-text" id="ban-text">Connecting to Robinhood...</span>
-  <span class="banner-badge b-flat" id="ban-badge">— FLAT</span>
+<!-- SPY / VIX / BALANCE -->
+<div class="prices">
+  <div class="price-card">
+    <div class="pc-label">SPY</div>
+    <div class="pc-val" id="p-spy" style="color:#e8e8f0">—</div>
+  </div>
+  <div class="price-card">
+    <div class="pc-label">VIX</div>
+    <div class="pc-val" id="p-vix" style="color:#888899">—</div>
+  </div>
+  <div class="price-card">
+    <div class="pc-label">Balance</div>
+    <div class="pc-val" id="p-bal" style="color:#4488ff">$21.64</div>
+  </div>
 </div>
 
-<!-- ─── 3-column layout ─── -->
-<div class="layout">
+<!-- VOL SIGNALS -->
+<div class="vol-row">
+  <div class="vol-chip">
+    <div class="vc-label">Term Structure</div>
+    <div class="vc-val" id="v-ts" style="color:#888899">—</div>
+  </div>
+  <div class="vol-chip">
+    <div class="vc-label">Vanna Flow</div>
+    <div class="vc-val" id="v-vanna" style="color:#888899">—</div>
+  </div>
+  <div class="vol-chip">
+    <div class="vc-label">VIX3M (est)</div>
+    <div class="vc-val" id="v-vix3m" style="color:#888899">—</div>
+  </div>
+</div>
 
-  <!-- LEFT: Vol Signal Cards -->
-  <div class="panel">
-    <div class="p-title">Vol Signals <span class="p-title-right">Karsan · Whaley · SpotGamma</span></div>
-    <div class="vol-grid">
+<!-- BOT STATUS -->
+<div class="status-card">
+  <div class="status-title">🤖 Bot Status</div>
+  <div class="status-text" id="last-action">Starting up...</div>
+  <div class="status-updated" id="updated">—</div>
+</div>
 
-      <div class="vol-row">
-        <span class="vol-row-label">VIX Regime</span>
-        <span class="vol-row-val" id="vs-vix">—</span>
-        <span class="vol-row-sub" id="vs-vix-lbl">—</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-vix" style="width:0%"></div></div>
-      </div>
-
-      <div class="vol-row">
-        <span class="vol-row-label">Term Structure · Whaley</span>
-        <span class="vol-row-val" id="vs-ts">—</span>
-        <span class="vol-row-sub" id="vs-ts-sub">VIX / VIX3M slope</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-ts" style="width:50%;background:var(--blue)"></div></div>
-      </div>
-
-      <div class="vol-row">
-        <span class="vol-row-label">Vanna Flow · Karsan</span>
-        <span class="vol-row-val" id="vs-vanna">—</span>
-        <span class="vol-row-sub" id="vs-vanna-sub">VIX Δ → dealer hedging</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-vanna" style="width:50%"></div></div>
-      </div>
-
-      <div class="vol-row">
-        <span class="vol-row-label">VIX3M · Slope</span>
-        <span class="vol-row-val" id="vs-vix3m">—</span>
-        <span class="vol-row-sub" id="vs-slope-sub">93-day forward vol</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-slope" style="width:50%;background:var(--blue)"></div></div>
-      </div>
-
-      <div class="vol-row">
-        <span class="vol-row-label">GEX Total</span>
-        <span class="vol-row-val" id="vs-gex">—</span>
-        <span class="vol-row-sub" id="vs-gex-sub">+ = PIN  / − = TREND</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-gex" style="width:50%;background:var(--blue)"></div></div>
-      </div>
-
-      <div class="vol-row">
-        <span class="vol-row-label">Signal · All Gates</span>
-        <span class="vol-row-val" id="vs-sig" style="color:var(--muted2)">FLAT</span>
-        <span class="vol-row-sub" id="vs-sig-sub">Waiting for data</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-sig" style="width:0%"></div></div>
-      </div>
-
-      <div class="vol-row" style="background:var(--bg3);">
-        <span class="vol-row-label">Account · $10k Goal</span>
-        <span class="vol-row-val" id="vs-bal">$21.64</span>
-        <span class="vol-row-sub" id="vs-goal-sub">0.2% of goal</span>
-        <div class="vol-bar-wrap"><div class="vol-bar" id="vb-goal" style="width:0.2%;background:var(--blue)"></div></div>
-      </div>
-
-    </div>
-  </div><!-- /left -->
-
-  <!-- CENTER: GEX Ladder + Chart -->
-  <div class="panel center">
-    <div class="p-title">GEX Strike Ladder <span class="p-title-right" id="ladder-ts">—</span></div>
-    <div class="ladder-header">
-      <span>Strike</span><span>CALLS ▶</span><span>◀ PUTS</span><span>NET GEX</span>
-    </div>
-    <div class="ladder" id="ladder-body" style="flex:1;min-height:180px;">
-      <div style="text-align:center;color:var(--muted);padding:30px;font-size:11px;">
-        ⚡ GEX ladder loads when options chain is available<br>
-        <span style="font-size:9px;color:var(--muted);margin-top:6px;display:block">Bot scans chain every 60s · 9:30 AM – 4:00 PM ET</span>
-      </div>
-    </div>
-
-    <div class="p-title" style="border-top:1px solid var(--border);">SPY 5-Min Chart <span class="p-title-right">RSI · MACD · BB</span></div>
-    <div class="chart-wrap">
-      <div id="tv_chart" style="height:100%;min-height:260px;"></div>
-      <script src="https://s3.tradingview.com/tv.js"></script>
-      <script>
-      new TradingView.widget({
-        container_id:"tv_chart",symbol:"AMEX:SPY",interval:"5",
-        theme:"dark",style:"1",locale:"en",width:"100%",height:"100%",
-        hide_top_toolbar:false,save_image:false,
-        studies:["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies"]
-      });
-      </script>
-    </div>
-  </div><!-- /center -->
-
-  <!-- RIGHT: Options Flow + Stats + Journal -->
-  <div class="panel">
-
-    <!-- Net flow gauge -->
-    <div class="p-title">Options Flow <span class="p-title-right">$ premium weighted</span></div>
-    <div class="net-flow-wrap">
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px;">
-        <span>▲ CALLS <span id="nf-call-pct" style="color:var(--green);font-weight:700">50%</span></span>
-        <span>PUTS ▼ <span id="nf-put-pct" style="color:var(--red);font-weight:700">50%</span></span>
-      </div>
-      <div class="net-flow-bar">
-        <div class="nf-calls" id="nf-calls" style="width:50%"></div>
-        <div class="nf-puts"  id="nf-puts"  style="width:50%"></div>
-      </div>
-    </div>
-
-    <!-- Flow feed table -->
-    <div style="overflow-y:auto;flex:1;max-height:220px;">
-      <table class="flow-table">
-        <thead><tr><th>Time</th><th>Strike</th><th>Type</th><th>Prem $k</th></tr></thead>
-        <tbody id="flow-body">
-          <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Flow populates at market open</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Stats -->
-    <div class="p-title" style="border-top:1px solid var(--border);">Performance</div>
-    <div class="stats-block">
-      <div class="stat-row"><span class="stat-lbl">Win Rate</span><span class="stat-val" id="st-wr" style="color:var(--muted2)">—</span></div>
-      <div class="stat-row"><span class="stat-lbl">Total P&amp;L</span><span class="stat-val" id="st-pnl" style="color:var(--muted2)">—</span></div>
-      <div class="stat-row"><span class="stat-lbl">Trades</span><span class="stat-val" id="st-trades">0</span></div>
-      <div class="stat-row"><span class="stat-lbl">Streak</span><span class="stat-val" id="st-streak" style="color:var(--muted2)">—</span></div>
-      <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:9px;color:var(--muted)">
-        <span id="st-bal">Balance $21.64</span><span id="st-goal">0.2% of $10k</span>
-      </div>
-      <div class="goal-bar-bg"><div class="goal-bar-fill" id="goal-fill" style="width:0.2%"></div></div>
-    </div>
-
-    <!-- Journal -->
-    <div class="p-title" style="border-top:1px solid var(--border);">Trade Journal</div>
-    <div style="overflow-y:auto;">
-      <table class="journal-table">
-        <thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>P&amp;L%</th><th>P&amp;L$</th></tr></thead>
-        <tbody id="journal-body">
-          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px">No trades yet</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-  </div><!-- /right -->
-</div><!-- /layout -->
+<!-- RECENT TRADES -->
+<div class="journal-card">
+  <div class="status-title">📋 Recent Trades — <span id="trade-count">0</span> total · P&L <span id="total-pnl" style="color:#888899">$0.00</span></div>
+  <div id="journal"></div>
+</div>
 
 <script>
-// ── Clock ──────────────────────────────────────────────────────────────────
-function updateClock(){
+function clock(){
   const et=new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
   const p=n=>String(n).padStart(2,"0");
-  setText("clock",`${p(et.getHours())}:${p(et.getMinutes())}:${p(et.getSeconds())} ET`);
+  document.getElementById("clock").textContent=`${p(et.getHours())}:${p(et.getMinutes())}:${p(et.getSeconds())} ET`;
 }
-setInterval(updateClock,1000); updateClock();
+setInterval(clock,1000); clock();
 
-// ── Countdown ──────────────────────────────────────────────────────────────
+// Poll every 60s
 let cd=5;
-setInterval(()=>{
-  cd--;
-  const el=document.getElementById("cd");
-  if(el) el.textContent=cd>0?`↻ ${cd}s`:"↻ …";
-  if(cd<=0){ fetchState(); cd=60; }
-},1000);
+setInterval(()=>{ if(--cd<=0){ fetch_state(); cd=60; } },1000);
 
-// ── Signal logic ───────────────────────────────────────────────────────────
-function computeSignal(g){
-  if(!g.vix||g.vix>=30) return "flat";
-  if((g.ts_label||"contango")==="backwardation") return "flat";
-  const v=g.vanna_label||"neutral";
-  if(["strong_vanna_bid","vanna_bid","neutral"].includes(v)) return "call";
-  if(["vanna_sell","vanna_headwind"].includes(v)) return "put";
-  return "flat";
-}
+const vannaLabels={
+  strong_vanna_bid:["STRONG BID","#00ff88"],
+  vanna_bid:["VANNA BID","#88ffcc"],
+  neutral:["NEUTRAL","#888899"],
+  vanna_headwind:["HEADWIND","#ffaa00"],
+  vanna_sell:["VANNA SELL","#ff3366"],
+};
+const tsLabels={
+  deep_contango:["DEEP CONTANGO","#00ff88"],
+  contango:["CONTANGO","#4488ff"],
+  backwardation:["BACKWARDATION ⛔","#ff3366"],
+};
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-function setText(id,v){const el=$(id);if(el)el.textContent=v;}
-function setHTML(id,v){const el=$(id);if(el)el.innerHTML=v;}
-function setColor(id,c){const el=$(id);if(el)el.style.color=c;}
-function setWidth(id,pct){const el=$(id);if(el)el.style.width=Math.min(Math.max(pct,0),100)+"%";}
-function setBar(id,pct,color){const el=$(id);if(el){el.style.width=Math.min(Math.max(pct,0),100)+"%";if(color)el.style.background=color;}}
-
-// ── GEX Ladder renderer ────────────────────────────────────────────────────
-function renderLadder(ladder, g){
-  if(!ladder||!ladder.length) return;
-  const spot=g.spot||0, flip=g.gamma_flip||0, cwall=g.call_wall||0, pwall=g.put_wall||0, mp=g.max_pain||0;
-  // Find max abs GEX for bar scaling
-  const maxGex=Math.max(...ladder.map(r=>Math.max(Math.abs(r.call_gex||0),Math.abs(r.put_gex||0))),0.001);
-  // Sort descending by strike
-  const rows=[...ladder].sort((a,b)=>b.strike-a.strike);
-  const atSpot=rows.reduce((best,r)=>Math.abs(r.strike-spot)<Math.abs(best.strike-spot)?r:best,rows[0]);
-  let html="";
-  for(const r of rows){
-    const s=r.strike;
-    const isSpot=s===atSpot.strike;
-    const isFlip=s===flip;
-    const isCwall=s===cwall;
-    const isPwall=s===pwall;
-    const isMP=s===mp;
-    let cls="ladder-row";
-    if(isSpot) cls+=" at-spot";
-    else if(isFlip) cls+=" at-flip";
-    else if(isCwall) cls+=" at-cwall";
-    else if(isPwall) cls+=" at-pwall";
-    const callW=Math.round((r.call_gex||0)/maxGex*100);
-    const putW =Math.round((r.put_gex||0)/maxGex*100);
-    const net=r.net_gex||0;
-    const netClr=net>0?"var(--green)":net<0?"var(--red)":"var(--muted)";
-    let tags="";
-    if(isSpot)  tags+=`<span class="row-tag tag-spot">SPY</span>`;
-    if(isFlip)  tags+=`<span class="row-tag tag-flip">FLIP</span>`;
-    if(isCwall) tags+=`<span class="row-tag tag-cwall">CWALL</span>`;
-    if(isPwall) tags+=`<span class="row-tag tag-pwall">PWALL</span>`;
-    if(isMP)    tags+=`<span class="row-tag tag-mp">MP</span>`;
-    html+=`<div class="${cls}">
-      <div class="strike-cell">${s}${tags}</div>
-      <div class="bar-cell-r"><div class="gex-bar call-bar" style="width:${callW}%;height:10px;"></div></div>
-      <div class="bar-cell-l"><div class="gex-bar put-bar"  style="width:${putW}%;height:10px;"></div></div>
-      <div class="net-cell" style="color:${netClr}">${net>0?"+":""}${net.toFixed(2)}M</div>
-    </div>`;
-  }
-  setHTML("ladder-body",html);
-  if(g.last_updated) setText("ladder-ts","Updated "+String(g.last_updated).slice(11,16)+" ET");
-}
-
-// ── Main fetch ─────────────────────────────────────────────────────────────
-async function fetchState(){
+async function fetch_state(){
   try{
     const r=await fetch("/api/state");
-    if(!r.ok) throw new Error(r.status);
+    if(!r.ok) throw 0;
     const d=await r.json();
-    const g=d.gex||{}, s=d.stats||{};
 
-    // Pill
-    const pill=$("pill");
-    if(pill){pill.className="pill pill-live";pill.innerHTML='<span class="dot"></span>LIVE';}
+    document.getElementById("pill").textContent="● LIVE";
+    document.getElementById("pill").style.color="#00ff88";
 
-    // Header chips
-    if(g.spot){ setText("h-spy","$"+Number(g.spot).toFixed(2)); setText("lv-spot","$"+Number(g.spot).toFixed(2)); }
-    if(g.vix){
-      const vc=g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
-      setText("h-vix",Number(g.vix).toFixed(2)); setColor("h-vix",vc);
-    }
-    if(g.gex_total_m!=null){
-      const gc=g.gex_total_m>0?"var(--green)":g.gex_total_m<0?"var(--red)":"var(--muted2)";
-      setText("h-gex",(g.gex_total_m>0?"+":"")+Number(g.gex_total_m).toFixed(1)+"M"); setColor("h-gex",gc);
-    }
-    if(s.balance) setText("h-bal","$"+Number(s.balance).toFixed(2));
+    // SPY
+    if(d.spot){ document.getElementById("p-spy").textContent="$"+Number(d.spot).toFixed(2); }
 
-    // Key levels
-    if(g.call_wall)  setText("lv-cwall","$"+Math.round(g.call_wall));
-    if(g.gamma_flip) setText("lv-flip","$"+Math.round(g.gamma_flip));
-    if(g.max_pain)   setText("lv-mp","$"+Math.round(g.max_pain));
-    if(g.put_wall)   setText("lv-pwall","$"+Math.round(g.put_wall));
-    if(g.vix_regime_label){
-      const vc=g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
-      setText("lv-regime",g.vix_regime_label); setColor("lv-regime",vc);
-    }
-    if(g.ts_label){
-      const tc={deep_contango:"var(--green)",contango:"var(--blue)",backwardation:"var(--red)"};
-      setText("lv-ts",(g.ts_label||"").replace(/_/g," ").toUpperCase()); setColor("lv-ts",tc[g.ts_label]||"var(--muted2)");
-    }
-    if(g.vanna_label){
-      const vm={strong_vanna_bid:["STRONG BID","var(--green)"],vanna_bid:["VANNA BID","#88ffcc"],neutral:["NEUTRAL","var(--muted2)"],vanna_headwind:["HEADWIND","var(--amber)"],vanna_sell:["VANNA SELL","var(--red)"]};
-      const [lbl,clr]=vm[g.vanna_label]||["—","var(--muted2)"];
-      setText("lv-vanna",lbl); setColor("lv-vanna",clr);
+    // VIX
+    if(d.vix){
+      const vix=Number(d.vix);
+      const vc=vix<18?"#00ff88":vix<25?"#ffaa00":"#ff3366";
+      const el=document.getElementById("p-vix");
+      el.textContent=vix.toFixed(2); el.style.color=vc;
     }
 
-    // Signal
-    const sig=computeSignal(g);
-    const sm={
-      call:["▲ CALL","var(--green)",100,"b-call","📈 LONG CALL — Vanna bid + contango aligned"],
-      put: ["▼ PUT","var(--red)",100,"b-put","📉 LONG PUT — Vanna selling + dealer flow bearish"],
-      flat:["FLAT","var(--muted2)",0,"b-flat","⚡ "+((g.last_action)||"Waiting for signal alignment")],
-    };
-    const [sv,sc,sbp,sbc,sbt]=sm[sig];
-    setText("h-sig",sv); setColor("h-sig",sc);
-    setText("vs-sig",sv); setColor("vs-sig",sc);
-    setText("vs-sig-sub",sig==="flat"?"Waiting for alignment":"All gates green ✅");
-    setBar("vb-sig",sbp,sc);
-    const bb=$("ban-badge");
-    if(bb){bb.textContent=sv;bb.className="banner-badge "+sbc;}
-    setText("ban-text",sbt);
-    setText("ban-icon",sig==="call"?"📈":sig==="put"?"📉":"⚡");
+    // Balance
+    if(d.balance) document.getElementById("p-bal").textContent="$"+Number(d.balance).toFixed(2);
 
-    // Vol signal cards
-    if(g.vix){
-      const vix=Number(g.vix), vc=vix<18?"var(--green)":vix<25?"var(--amber)":"var(--red)";
-      setText("vs-vix",vix.toFixed(2)); setColor("vs-vix",vc);
-      setText("vs-vix-lbl",(g.vix_regime_label||"—")+(vix<30?" · Gates ✅":" · BLOCKED ❌"));
-      setBar("vb-vix",Math.min(vix/35*100,100),vc);
+    // Term structure
+    if(d.ts_label){
+      const [lbl,clr]=tsLabels[d.ts_label]||["—","#888899"];
+      const el=document.getElementById("v-ts");
+      el.textContent=lbl; el.style.color=clr;
     }
-    if(g.ts_label){
-      const m={deep_contango:["DEEP CONTANGO","var(--green)",90],contango:["CONTANGO","var(--blue)",65],backwardation:["BACKW. ⛔","var(--red)",10]};
-      const [lbl,clr,pct]=m[g.ts_label]||["—","var(--muted)",50];
-      setText("vs-ts",lbl); setColor("vs-ts",clr);
-      setText("vs-ts-sub",g.ts_slope!=null?"Slope "+(g.ts_slope*100).toFixed(1)+"%":"—");
-      setBar("vb-ts",pct,clr);
+
+    // Vanna
+    if(d.vanna_label){
+      const [lbl,clr]=vannaLabels[d.vanna_label]||["—","#888899"];
+      const el=document.getElementById("v-vanna");
+      el.textContent=lbl; el.style.color=clr;
     }
-    if(g.vanna_label){
-      const m={strong_vanna_bid:["STRONG BID ▲","var(--green)",95],vanna_bid:["VANNA BID ▲","#88ffcc",75],neutral:["NEUTRAL —","var(--muted2)",50],vanna_headwind:["HEADWIND ▼","var(--amber)",28],vanna_sell:["VANNA SELL ▼","var(--red)",8]};
-      const [lbl,clr,pct]=m[g.vanna_label]||["—","var(--muted)",50];
-      setText("vs-vanna",lbl); setColor("vs-vanna",clr);
-      setText("vs-vanna-sub","Mult ×"+(g.vanna_mult||1).toFixed(2));
-      setBar("vb-vanna",pct,clr);
+
+    // VIX3M
+    if(d.vix3m){
+      const el=document.getElementById("v-vix3m");
+      el.textContent=Number(d.vix3m).toFixed(2)+" (est)"; el.style.color="#4488ff";
     }
-    if(g.vix3m){
-      setText("vs-vix3m",Number(g.vix3m).toFixed(2)+" (est)"); setColor("vs-vix3m","var(--blue)");
-      if(g.ts_slope!=null){
-        const sl=g.ts_slope;
-        setText("vs-slope-sub","Slope "+(sl>=0?"+":"")+(sl*100).toFixed(1)+"%");
-        setBar("vb-slope",Math.min(Math.max((sl+0.05)*600,0),100),sl>0?"var(--blue)":"var(--red)");
+
+    // Signal — use bot's direction if set, else derive from vanna+ts
+    let sig = d.direction; // "call"/"put"/null from bot
+    if(!sig){
+      const vix=d.vix||99;
+      const ts=d.ts_label||"contango";
+      const va=d.vanna_label||"neutral";
+      if(vix<30 && ts!=="backwardation"){
+        if(["strong_vanna_bid","vanna_bid","neutral"].includes(va)) sig="call";
+        else if(["vanna_sell","vanna_headwind"].includes(va)) sig="put";
       }
     }
-    if(g.gex_total_m!=null){
-      const gc=g.gex_total_m>0?"var(--green)":g.gex_total_m<0?"var(--red)":"var(--muted2)";
-      setText("vs-gex",(g.gex_total_m>0?"+":"")+Number(g.gex_total_m).toFixed(1)+"M"); setColor("vs-gex",gc);
-      setText("vs-gex-sub",g.gex_total_m>0?"PIN regime — dampening":"TREND regime — amplifying");
-      setBar("vb-gex",50+(g.gex_total_m>0?20:-20),gc);
-    }
-    if(s.balance!=null){
-      const b=Number(s.balance), gp=s.goal_pct||0;
-      setText("vs-bal","$"+b.toFixed(2));
-      setText("vs-goal-sub",gp.toFixed(1)+"% of $10,000");
-      setBar("vb-goal",gp,"var(--blue)");
-    }
-
-    // Net flow gauge
-    const cp=g.net_flow_call_pct||50, pp=100-cp;
-    const ncalls=$("nf-calls"), nputs=$("nf-puts");
-    if(ncalls){ncalls.style.width=cp+"%"; if(cp>5) ncalls.textContent=Math.round(cp)+"%";}
-    if(nputs) {nputs.style.width=pp+"%";  if(pp>5) nputs.textContent=Math.round(pp)+"%";}
-    setText("nf-call-pct",Math.round(cp)+"%"); setText("nf-put-pct",Math.round(pp)+"%");
-
-    // Flow table
-    if(g.flow_feed&&g.flow_feed.length){
-      const rows=g.flow_feed.map(f=>{
-        const tc=f.type==="call"?"flow-call":"flow-put";
-        return `<tr><td style="color:var(--muted2)">${f.time||"—"}</td><td style="color:var(--white)">$${f.strike}</td><td class="${tc}">${(f.type||"").toUpperCase()}</td><td class="flow-prem">$${f.premium_k}k</td></tr>`;
-      }).join("");
-      setHTML("flow-body",rows);
+    const box=document.getElementById("sig-box");
+    const main=document.getElementById("sig-main");
+    const sub=document.getElementById("sig-sub");
+    if(sig==="call"){
+      box.className="signal-box call";
+      main.className="sig-main sig-call"; main.textContent="▲ LONG CALL";
+      sub.textContent="Vanna bid + contango — enter 0DTE call";
+    } else if(sig==="put"){
+      box.className="signal-box put";
+      main.className="sig-main sig-put"; main.textContent="▼ LONG PUT";
+      sub.textContent="Vanna selling + bearish flow — enter 0DTE put";
+    } else {
+      box.className="signal-box flat";
+      main.className="sig-main sig-flat"; main.textContent="— FLAT";
+      sub.textContent=d.vix>=30?"VIX too high — stay flat":d.ts_label==="backwardation"?"Backwardation — no entries":d.last_action||"No signal";
     }
 
-    // GEX Ladder
-    if(g.strike_ladder&&g.strike_ladder.length) renderLadder(g.strike_ladder, g);
+    // Status
+    document.getElementById("last-action").textContent=d.last_action||"—";
+    document.getElementById("updated").textContent="Updated "+d.ts;
 
     // Stats
-    if(s.win_rate!=null){
-      const wr=Math.round(s.win_rate*100);
-      setText("st-wr",wr+"%"); setColor("st-wr",wr>55?"var(--green)":wr>40?"var(--amber)":"var(--red)");
-    }
-    if(s.total_pnl_usd!=null){
-      const v=s.total_pnl_usd;
-      setText("st-pnl",(v>=0?"$+":"$")+Number(v).toFixed(2));
-      setColor("st-pnl",v>=0?"var(--green)":"var(--red)");
-    }
-    if(s.total_trades!=null) setText("st-trades",s.total_trades);
-    if(s.streak_type){
-      setText("st-streak",s.streak+"× "+s.streak_type.toUpperCase());
-      setColor("st-streak",s.streak_type==="win"?"var(--green)":"var(--red)");
-    }
-    if(s.balance!=null){
-      const b=Number(s.balance), gp=s.goal_pct||0;
-      setText("st-bal","Balance $"+b.toFixed(2));
-      setText("st-goal",gp.toFixed(1)+"% of $10k");
-      const gf=$("goal-fill"); if(gf) gf.style.width=Math.min(gp,100)+"%";
-    }
+    document.getElementById("trade-count").textContent=d.total_trades||0;
+    const pnl=d.total_pnl||0;
+    const pnlEl=document.getElementById("total-pnl");
+    pnlEl.textContent=(pnl>=0?"$+":"$")+Math.abs(pnl).toFixed(2);
+    pnlEl.style.color=pnl>=0?"#00ff88":"#ff3366";
 
     // Journal
-    if(d.journal&&d.journal.length){
-      const rows=d.journal.slice().reverse().map(t=>{
-        const ty=t.opt_type==="call"?'<span class="flow-call">CALL</span>':'<span class="flow-put">PUT</span>';
-        const pp=t.pnl_pct!=null?`<span class="${t.pnl_pct>0?"j-win":"j-loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}%</span>`:t.exit_price==null?'<span class="j-open">OPEN</span>':'—';
-        const pu=t.pnl_usd!=null?`<span class="${t.pnl_usd>0?"j-win":"j-loss"}">$${t.pnl_usd>0?"+":""}${Number(t.pnl_usd).toFixed(2)}</span>`:'—';
-        return `<tr><td style="color:var(--muted2)">${t.date||""}</td><td>${ty}</td><td>$${t.strike||""}</td><td>${pp}</td><td>${pu}</td></tr>`;
+    const trades=(d.trades||[]).slice().reverse();
+    const j=document.getElementById("journal");
+    if(!trades.length){
+      j.innerHTML='<div class="j-empty">No trades yet</div>';
+    } else {
+      j.innerHTML=trades.map(t=>{
+        const type=t.opt_type==="call"?`<span class="j-type-call">CALL</span>`:`<span class="j-type-put">PUT</span>`;
+        const pnl=t.pnl_pct!=null
+          ?`<span class="${t.pnl_pct>0?"j-pnl-win":"j-pnl-loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}% ($${t.pnl_usd>0?"+":""}${Number(t.pnl_usd||0).toFixed(2)})</span>`
+          :t.exit_price==null?`<span class="j-open">OPEN</span>`:"";
+        return `<div class="j-row"><span class="j-date">${t.date||""}</span>${type}<span class="j-strike">$${t.strike||""}</span>${pnl}</div>`;
       }).join("");
-      setHTML("journal-body",rows);
     }
 
   }catch(e){
-    const p=$("pill"); if(p){p.className="pill pill-off";p.textContent="OFFLINE";}
-    console.error(e);
+    document.getElementById("pill").textContent="● OFFLINE";
+    document.getElementById("pill").style.color="#ff3366";
   }
 }
 
-fetchState();
+fetch_state();
 </script>
 </body>
 </html>
