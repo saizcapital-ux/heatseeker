@@ -25,21 +25,58 @@ GOAL         = 10_000.0
 _live = {}
 _live_lock = threading.Lock()
 
+def _yf_price(ticker_obj):
+    """Extract last price from yfinance Ticker using multiple fallback fields."""
+    fi = ticker_obj.fast_info
+    for attr in ("last_price", "regularMarketPrice", "previousClose"):
+        v = getattr(fi, attr, None)
+        if v:
+            return round(float(v), 2)
+    # Last resort: 1-day history
+    try:
+        h = ticker_obj.history(period="1d", interval="1m")
+        if not h.empty:
+            return round(float(h["Close"].iloc[-1]), 2)
+    except Exception:
+        pass
+    return None
+
 def _fetch_live_market():
-    """Fetch SPY price and VIX from Yahoo Finance every 60 s."""
+    """Fetch SPY, VIX, VIX3M from Yahoo Finance and patch gex_state.json every 60 s."""
+    import yfinance as yf
+    spy_t  = yf.Ticker("SPY")
+    vix_t  = yf.Ticker("^VIX")
+    vix3m_t = yf.Ticker("^VIX3M")
     while True:
         try:
-            import yfinance as yf
-            spy = yf.Ticker("SPY")
-            vix = yf.Ticker("^VIX")
-            spy_info = spy.fast_info
-            vix_info = vix.fast_info
-            spot = getattr(spy_info, "last_price", None) or getattr(spy_info, "regularMarketPrice", None)
-            vix_val = getattr(vix_info, "last_price", None) or getattr(vix_info, "regularMarketPrice", None)
+            spot    = _yf_price(spy_t)
+            vix_val = _yf_price(vix_t)
+            vix3m   = _yf_price(vix3m_t)
+            now_str = datetime.now(ET).strftime("%H:%M:%S ET")
+            patch = {"market_updated": now_str}
+            if spot:    patch["spot"]    = spot
+            if vix_val: patch["vix"]     = vix_val
+            if vix3m:
+                patch["vix3m"] = vix3m
+                if vix_val:
+                    slope = round((vix3m - vix_val) / vix_val, 4)
+                    patch["ts_slope"] = slope
+                    patch["ts_label"] = ("deep_contango" if slope > 0.10
+                                         else "contango" if slope > 0
+                                         else "backwardation")
             with _live_lock:
-                if spot:  _live["spot"] = round(float(spot), 2)
-                if vix_val: _live["vix"] = round(float(vix_val), 2)
-                _live["market_updated"] = datetime.now(ET).strftime("%H:%M:%S ET")
+                _live.update(patch)
+            # Patch gex_state.json on disk so the bot's next read is fresh
+            try:
+                with open(GEX_STATE) as f:
+                    state = json.load(f)
+            except Exception:
+                state = {}
+            state.update(patch)
+            os.makedirs(os.path.dirname(GEX_STATE), exist_ok=True)
+            with open(GEX_STATE, "w") as f:
+                json.dump(state, f, indent=2)
+            log.debug(f"Live tick: SPY={spot} VIX={vix_val} VIX3M={vix3m} @ {now_str}")
         except Exception as e:
             log.warning(f"Live fetch error: {e}")
         time.sleep(60)
@@ -55,14 +92,9 @@ def load_gex_state():
             state = json.load(f)
     except Exception:
         state = {}
-    # Overlay live market data (fresher than what bot wrote)
+    # Overlay with in-memory live cache (most recent tick)
     with _live_lock:
-        if _live.get("spot"):
-            state["spot"] = _live["spot"]
-        if _live.get("vix"):
-            state["vix"] = _live["vix"]
-        if _live.get("market_updated"):
-            state["market_updated"] = _live["market_updated"]
+        state.update({k: v for k, v in _live.items() if v is not None})
     return state
 
 def load_journal():
