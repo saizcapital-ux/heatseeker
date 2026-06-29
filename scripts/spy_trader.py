@@ -393,6 +393,117 @@ def compute_ivr(atm_iv):
     ivr = max(0, min(100, (atm_iv - iv_low) / (iv_high - iv_low) * 100))
     return round(ivr, 1)
 
+def get_vix_prev_close():
+    """Fetch VIX previous session close for vanna flow calculation."""
+    try:
+        import yfinance as yf
+        hist = yf.Ticker("^VIX").history(period="3d")
+        if len(hist) >= 2:
+            return round(float(hist["Close"].iloc[-2]), 2)
+    except Exception:
+        pass
+    return None
+
+def compute_vanna_flow(vix_now, vix_prev_close):
+    """
+    Cem Karsan / Kai Volatility: vanna is the rate of change of delta w.r.t. vol.
+    When VIX drops intraday, dealers who are long calls see their delta rise →
+    they must BUY underlying to stay delta-neutral → mechanical bid under SPY.
+    When VIX rises, the reverse: dealers sell → mechanical pressure on SPY.
+    Returns (size_multiplier, label).
+    """
+    if vix_prev_close is None or vix_prev_close <= 0:
+        return 1.0, "unknown"
+    change_pct = (vix_now - vix_prev_close) / vix_prev_close
+    if change_pct < -0.07:
+        label, mult = "strong_vanna_bid", 1.25    # VIX -7%+: strong mechanical buying
+    elif change_pct < -0.03:
+        label, mult = "vanna_bid", 1.12           # VIX -3-7%: vanna tailwind for calls
+    elif change_pct < -0.01:
+        label, mult = "vanna_mild_bid", 1.05      # VIX -1-3%: mild tailwind
+    elif change_pct > 0.07:
+        label, mult = "vanna_sell", 0.65          # VIX +7%+: mechanical selling — no calls
+    elif change_pct > 0.03:
+        label, mult = "vanna_headwind", 0.80      # VIX +3-7%: reduce call size
+    elif change_pct > 0.01:
+        label, mult = "vanna_mild_headwind", 0.92
+    else:
+        label, mult = "vanna_neutral", 1.00
+    log.info(f"Vanna flow (Karsan): VIX {vix_prev_close:.2f}→{vix_now:.2f} ({change_pct:+.1%}) → {label} ×{mult}")
+    return mult, label
+
+def compute_skew_signal(calls, puts, spot):
+    """
+    Karsan: implied skew = put IV premium over call IV.
+    Elevated put skew means market is pricing downside fear — bearish structural signal.
+    Reduces call confidence when market is pricing in crash risk.
+    Returns (size_multiplier, label, skew_ratio).
+    """
+    atm_range = 5.0
+    atm_calls = [o for o in calls if abs(float(o["strike_price"]) - spot) <= atm_range and o.get("implied_volatility", 0) > 0]
+    atm_puts  = [o for o in puts  if abs(float(o["strike_price"]) - spot) <= atm_range and o.get("implied_volatility", 0) > 0]
+    if not atm_calls or not atm_puts:
+        return 1.0, "unknown", 1.0
+    call_iv = sum(o["implied_volatility"] for o in atm_calls) / len(atm_calls)
+    put_iv  = sum(o["implied_volatility"] for o in atm_puts)  / len(atm_puts)
+    skew = put_iv / call_iv if call_iv > 0 else 1.0
+    if skew > 1.25:
+        label, mult = "extreme_put_skew", 0.60   # crash fear priced in — no calls
+    elif skew > 1.15:
+        label, mult = "heavy_put_skew", 0.75
+    elif skew > 1.08:
+        label, mult = "elevated_put_skew", 0.88
+    elif skew < 0.90:
+        label, mult = "call_skew", 1.08           # rare — calls pricier than puts
+    else:
+        label, mult = "neutral_skew", 1.00
+    log.info(f"Skew (Karsan): put_iv={put_iv:.3f} call_iv={call_iv:.3f} ratio={skew:.2f} → {label} ×{mult}")
+    return mult, label, round(skew, 3)
+
+def compute_flow_premium_ratio(calls, puts):
+    """
+    SpotGamma: compare total call premium traded vs put premium traded.
+    This is the real-time money flow signal — shows where institutional money is moving.
+    Call dominance (>60%) = bullish institutional flow.
+    Put dominance (>60%) = defensive/bearish institutional flow.
+    Returns (ratio 0-1, label) where >0.5 = call-dominant.
+    """
+    call_prem = sum(o.get("volume", 0) * o.get("mark_price", 0) * 100 for o in calls)
+    put_prem  = sum(o.get("volume", 0) * o.get("mark_price", 0) * 100 for o in puts)
+    total = call_prem + put_prem
+    if total <= 0:
+        return 0.5, "no_flow"
+    ratio = call_prem / total
+    if ratio > 0.65:
+        label = "call_dominant"     # institutional call buying — bullish
+    elif ratio > 0.55:
+        label = "call_leaning"
+    elif ratio < 0.35:
+        label = "put_dominant"      # defensive hedging flow — bearish
+    elif ratio < 0.45:
+        label = "put_leaning"
+    else:
+        label = "balanced"
+    log.info(f"Flow premium (SpotGamma): calls=${call_prem/1000:.0f}k puts=${put_prem/1000:.0f}k ratio={ratio:.2f} → {label}")
+    return round(ratio, 3), label
+
+def find_absolute_gamma_strike(calls, puts):
+    """
+    SpotGamma AGS (Absolute Gamma Strike): the strike with maximum TOTAL dealer
+    gamma × OI summed across calls AND puts. Unlike GEX (which nets them),
+    AGS finds the strongest hedging concentration — the true pinning magnet.
+    SPY tends to gravitate toward AGS on expiry day via charm/delta hedging.
+    """
+    gamma_by_strike = {}
+    for o in calls + puts:
+        s = float(o["strike_price"])
+        gamma_by_strike[s] = gamma_by_strike.get(s, 0) + o.get("gamma", 0) * o.get("open_interest", 0)
+    if not gamma_by_strike:
+        return None
+    ags = max(gamma_by_strike, key=gamma_by_strike.get)
+    log.info(f"Absolute Gamma Strike / Pin Target (SpotGamma AGS): ${ags:.0f}")
+    return ags
+
 def find_entry_contract(pool, target, max_spend, max_contracts):
     """
     Find best contract near target strike within budget.
@@ -604,7 +715,47 @@ def main():
         log.info(f"GATE 6d BOOST: OPEX cycle Phase {opex_cycle['opex_phase']} → call boost ×{opex_cycle['opex_call_boost']} (${pre:.2f} → ${max_spend:.2f})")
     elif opex_cycle["opex_phase"] == 1:
         log.warning("GATE 6d CAUTION: SPY below monthly put wall — size cut 50%")
-        max_spend = max(10.0, max_spend * 0.50)
+        max_spend = max(5.0, max_spend * 0.50)
+
+    # Gate 6e — Vanna flow (Cem Karsan / Kai Volatility)
+    # VIX dropping intraday → dealers mechanically buy SPY → tailwind for calls.
+    # VIX rising intraday → dealers mechanically sell SPY → headwind for calls.
+    vix_prev = get_vix_prev_close()
+    vanna_mult, vanna_label = compute_vanna_flow(vix, vix_prev)
+    if vanna_label == "vanna_sell" and direction == "call":
+        log.warning(f"GATE 6e BLOCKED: VIX spike ({vanna_label}) → vanna sell pressure — no calls"); sys.exit(0)
+    if vanna_mult != 1.0:
+        pre = max_spend
+        max_spend = min(max_spend * vanna_mult, balance * 0.90)
+        log.info(f"GATE 6e: vanna {vanna_label} ×{vanna_mult} → spend ${pre:.2f}→${max_spend:.2f}")
+    else:
+        log.info(f"GATE 6e PASS: vanna neutral")
+
+    # Gate 6f — Implied skew signal (Karsan: put IV premium = downside fear pricing)
+    skew_mult, skew_label, skew_ratio = compute_skew_signal(calls, puts, spot)
+    if skew_label == "extreme_put_skew" and direction == "call":
+        log.warning(f"GATE 6f BLOCKED: extreme put skew ({skew_ratio:.2f}) — crash fear priced in, no calls"); sys.exit(0)
+    if skew_mult != 1.0:
+        pre = max_spend
+        max_spend = min(max_spend * skew_mult, balance * 0.90)
+        log.info(f"GATE 6f: skew {skew_label} (ratio={skew_ratio:.2f}) ×{skew_mult} → spend ${pre:.2f}→${max_spend:.2f}")
+    else:
+        log.info(f"GATE 6f PASS: skew neutral (ratio={skew_ratio:.2f})")
+
+    # Gate 6g — Flow premium ratio (SpotGamma: institutional money direction)
+    flow_ratio, flow_label = compute_flow_premium_ratio(calls, puts)
+    if flow_label == "put_dominant" and direction == "call":
+        log.warning(f"GATE 6g CAUTION: put-dominant flow ({flow_ratio:.2f}) vs call signal — reducing size 20%")
+        max_spend = max(5.0, max_spend * 0.80)
+    elif flow_label in ("call_dominant", "call_leaning") and direction == "call":
+        pre = max_spend
+        max_spend = min(max_spend * 1.10, balance * 0.90)
+        log.info(f"GATE 6g BOOST: {flow_label} flow confirms call direction → spend ${pre:.2f}→${max_spend:.2f}")
+    else:
+        log.info(f"GATE 6g: flow {flow_label} ({flow_ratio:.2f}) — no adjustment")
+
+    # Compute Absolute Gamma Strike (SpotGamma AGS) — true pin/magnet level
+    ags = find_absolute_gamma_strike(calls, puts)
 
     write_gex_state({
         "spot": spot, "prev_close": prev_close, "ivr": ivr,
@@ -614,6 +765,10 @@ def main():
         "direction": direction, "gamma_flip": gamma_flip,
         "call_wall": gex_features.get("call_wall"),
         "put_wall":  gex_features.get("put_wall"),
+        "ags": ags,
+        "vanna_label": vanna_label, "vanna_mult": vanna_mult,
+        "skew_label": skew_label, "skew_ratio": skew_ratio,
+        "flow_label": flow_label, "flow_ratio": flow_ratio,
         "gex_features": gex_features,
         **opex_cycle,
     })
@@ -628,8 +783,8 @@ def main():
 
     # Gate 7b — Brenner jump premium decay: scale size by time-of-day curve
     jump_mult = jump_premium_time_multiplier()
-    max_spend = max(10.0, round(max_spend * confidence * jump_mult, 2))
-    log.info(f"Final spend: ${max_spend:.2f} (conf={confidence*100:.0f}% jump_mult={jump_mult:.2f} opex_adj={opex_adj:.2f} ts_mult={ts_mult:.2f})")
+    max_spend = max(5.0, round(max_spend * confidence * jump_mult, 2))
+    log.info(f"Final spend: ${max_spend:.2f} (conf={confidence*100:.0f}% jump_mult={jump_mult:.2f} opex_adj={opex_adj:.2f} ts_mult={ts_mult:.2f} vanna={vanna_mult:.2f} skew={skew_mult:.2f})")
 
     contract = find_entry_contract(pool, target, max_spend, max_contracts)
     if not contract:
@@ -668,7 +823,13 @@ def main():
     print(f"  VRP:        {vrp_label} ({vrp_spread*100:+.1f}pp IV vs realized)")
     print(f"  Jump mult:  {jump_mult:.2f}  OPEX adj: {opex_adj:.2f}  TS mult: {ts_mult:.2f}")
     print(f"  King node:  {king_strike}  (GEX ${king_gex/1e6:.2f}M)")
-    print(f"  Gamma flip: ${gamma_flip:.0f}")
+    print(f"  Gamma flip: ${gamma_flip:.0f}  (SpotGamma HVL)")
+    print(f"  AGS/Pin:    ${ags:.0f}  (SpotGamma — today's magnet)")
+    print(f"  Call wall:  ${gex_features.get('call_wall', 'n/a')}")
+    print(f"  Put wall:   ${gex_features.get('put_wall', 'n/a')}")
+    print(f"  Vanna:      {vanna_label}  ×{vanna_mult}  (Karsan — VIX flow)")
+    print(f"  Skew:       {skew_label}  ratio={skew_ratio:.2f}  (Karsan — put premium)")
+    print(f"  Flow:       {flow_label}  ratio={flow_ratio:.2f}  (SpotGamma — $ direction)")
     print(f"  Direction:  {direction.upper()}")
     print(f"  Trade:      BUY {qty}x {symbol} {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}  (delta={delta:.2f})")
     print(f"  Total cost: ${total:.2f}")
@@ -733,6 +894,13 @@ def analyze_gex_only():
         gex_features          = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
         gamma_flip            = gex_features.get("gamma_flip", king_strike)
         confidence, reasons   = gex_confidence_score(gex_features, direction)
+
+        # Expert signal layers (informational in GEX scan — no gating, just reporting)
+        vix_prev                       = get_vix_prev_close()
+        vanna_mult, vanna_label        = compute_vanna_flow(vix, vix_prev)
+        skew_mult, skew_label, skew_ratio = compute_skew_signal(calls, puts, spot)
+        flow_ratio, flow_label         = compute_flow_premium_ratio(calls, puts)
+        ags                            = find_absolute_gamma_strike(calls, puts)
 
         # Determine regime alignment
         regime_ok = not (
