@@ -13,7 +13,8 @@ log = logging.getLogger("heatseeker")
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
 GEX_STATE    = os.path.join(DATA_DIR, "gex_state.json")
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
-VIX_UUID     = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
+VIX_UUID        = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
+AGENTIC_ACCOUNT = "634079917"
 
 _ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
 
@@ -92,19 +93,21 @@ def _ticker():
                     patch["ts_slope"] = slope
                     patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
 
-                # Balance — try multiple endpoints
+                # Balance — Agentic account only (634079917)
                 try:
-                    port = rh.profiles.load_portfolio_profile() or {}
-                    bal = float(port.get("withdrawable_amount") or port.get("excess_margin") or 0)
+                    acc_data = rh.helper.request_get(
+                        f"https://api.robinhood.com/accounts/{AGENTIC_ACCOUNT}/"
+                    ) or {}
+                    bal = float(acc_data.get("buying_power") or acc_data.get("cash") or 0)
                     if not bal:
-                        acc = rh.profiles.load_account_profile() or {}
-                        bal = float(acc.get("cash") or acc.get("buying_power") or 0)
-                    if not bal:
-                        ph = rh.account.load_phoenix_account() or {}
-                        bal = float((ph.get("account_buying_power") or {}).get("amount", 0) or 0)
+                        # fallback: portfolio endpoint filtered to agentic account
+                        port_data = rh.helper.request_get(
+                            f"https://api.robinhood.com/portfolios/{AGENTIC_ACCOUNT}/"
+                        ) or {}
+                        bal = float(port_data.get("withdrawable_amount") or port_data.get("excess_margin") or 0)
                     if bal:
                         patch["balance"] = round(bal, 2)
-                        log.info(f"balance={bal}")
+                        log.info(f"agentic balance={bal}")
                 except Exception as be:
                     log.warning(f"balance fetch error: {be}")
 
