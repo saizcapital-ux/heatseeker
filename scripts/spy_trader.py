@@ -12,11 +12,11 @@ log = logging.getLogger("heatseeker")
 
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 ACCOUNT_NUMBER = "634079917"
-STRIKE_WINDOW  = 8
+STRIKE_WINDOW  = 20       # expanded: low balance needs further-OTM cheap contracts
 VIX_MIN        = 14.0
 VIX_MAX        = 28.0
-DELTA_MIN      = 0.30
-DELTA_MAX      = 0.45
+DELTA_MIN      = 0.15     # lowered: allow cheap OTM contracts when balance < $100
+DELTA_MAX      = 0.55
 
 # ── Creator-derived constants ─────────────────────────────────────────────────
 # Whaley: IV beats realized vol ~78-85% of the time — use this as premium gate
@@ -395,15 +395,16 @@ def compute_ivr(atm_iv):
 
 def find_entry_contract(pool, target, max_spend, max_contracts):
     """
-    Find best contract near target strike within the 0.30-0.45 delta band.
-    Falls back to nearest affordable if no delta-filtered contract found.
+    Find best contract near target strike within budget.
+    Three passes: ideal delta → relaxed delta → any affordable (for low-balance accounts).
     """
     candidates = sorted(pool, key=lambda o: float(o["strike_price"]))
+    low_balance = max_spend < 50.0  # sub-$50 account: widen search aggressively
 
-    # First pass: delta-filtered (0.30–0.45) — best contracts
-    for delta in [0, -1, 1, -2, 2]:
+    # Pass 1: delta-filtered (DELTA_MIN–DELTA_MAX) near target
+    for delta_offset in [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5]:
         for o in candidates:
-            if abs(float(o["strike_price"]) - (target + delta)) < 0.5:
+            if abs(float(o["strike_price"]) - (target + delta_offset)) < 0.5:
                 d = o.get("delta", 0)
                 if not (DELTA_MIN <= d <= DELTA_MAX):
                     continue
@@ -412,23 +413,36 @@ def find_entry_contract(pool, target, max_spend, max_contracts):
                 qty = max(1, min(max_contracts, int(max_spend / cost)))
                 if cost * qty <= max_spend:
                     o["_contracts"] = qty
-                    log.info(f"Delta-filtered contract: strike={o['strike_price']} delta={d:.2f}")
+                    log.info(f"Pass-1 contract: strike={o['strike_price']} delta={d:.2f} cost=${cost:.2f}")
                     return o
 
-    # Second pass: relax delta to 0.20–0.55 if nothing found in ideal band
-    log.warning("No contract in 0.30-0.45 delta band — relaxing to 0.20-0.55")
-    for delta in [0, -1, 1, -2, 2]:
-        for o in candidates:
-            if abs(float(o["strike_price"]) - (target + delta)) < 0.5:
-                d = o.get("delta", 0)
-                if d > 0 and not (0.20 <= d <= 0.55):
-                    continue
-                cost = o["ask_price"] * 100
-                if cost <= 0: continue
-                qty = max(1, min(max_contracts, int(max_spend / cost)))
-                if cost * qty <= max_spend:
-                    o["_contracts"] = qty
-                    return o
+    # Pass 2: relax delta to 0.05–0.65 — any reasonably priced contract
+    log.warning("Pass 1 failed — relaxing delta to 0.05-0.65")
+    for o in candidates:
+        d = o.get("delta", 0)
+        if d > 0 and not (0.05 <= d <= 0.65):
+            continue
+        cost = o["ask_price"] * 100
+        if cost <= 0: continue
+        qty = max(1, min(max_contracts, int(max_spend / cost)))
+        if cost * qty <= max_spend:
+            o["_contracts"] = qty
+            log.info(f"Pass-2 contract: strike={o['strike_price']} delta={d:.2f} cost=${cost:.2f}")
+            return o
+
+    # Pass 3: low-balance fallback — find cheapest affordable contract in entire pool
+    if low_balance:
+        log.warning("Pass 2 failed — low-balance fallback: scanning full chain for cheapest affordable")
+        affordable = [(o, o["ask_price"] * 100) for o in candidates
+                      if 0 < o["ask_price"] * 100 <= max_spend]
+        if affordable:
+            # prefer the one closest to target strike that is affordable
+            affordable.sort(key=lambda x: abs(float(x[0]["strike_price"]) - target))
+            o, cost = affordable[0]
+            o["_contracts"] = 1
+            log.info(f"Pass-3 contract: strike={o['strike_price']} delta={o.get('delta',0):.2f} cost=${cost:.2f}")
+            return o
+
     return None
 
 def place_order(contract, expiration, opt_type, qty):

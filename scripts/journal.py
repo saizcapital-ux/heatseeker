@@ -178,7 +178,8 @@ def get_smart_size(balance):
 
     # Not enough history — use conservative defaults
     if total_trades < 5:
-        if balance < 150:   return 1, min(balance * 0.9, 50)
+        if balance < 50:    return 1, round(balance * 0.90, 2)   # micro: spend up to 90%
+        elif balance < 150: return 1, min(balance * 0.9, 50)
         elif balance < 500: return 2, min(balance * 0.20, 100)
         else:               return 3, min(balance * 0.15, 200)
 
@@ -206,7 +207,8 @@ def get_smart_size(balance):
     kelly = max(0.05, min(kelly, 0.45))     # hard floor/ceiling
 
     max_spend    = round(balance * kelly, 2)
-    max_spend    = max(10.0, min(max_spend, balance * 0.90))
+    min_floor    = 5.0 if balance < 50 else 10.0   # allow tiny trades on micro balance
+    max_spend    = max(min_floor, min(max_spend, balance * 0.90))
     max_contracts = max(1, int(max_spend / 50))
 
     log.info(
