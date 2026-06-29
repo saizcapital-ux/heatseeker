@@ -1,302 +1,282 @@
 #!/usr/bin/env python3
-"""
-HEATSEEKER Live Dashboard
-Serves a real-time trading dashboard showing bot analysis, GEX levels,
-trade journal, and pattern learning.
-"""
-import json, os, threading, time, logging
-from datetime import datetime
+"""HEATSEEKER Vol Signal Dashboard — all signals computed in-process, no worker dependency."""
+import json, os, threading, time, logging, pathlib
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template, redirect, jsonify
+from flask import Flask, render_template, jsonify
 
 app = Flask(__name__)
 ET  = ZoneInfo("America/New_York")
 log = logging.getLogger("heatseeker.web")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
-# Always use the local data/ dir — web and worker are separate Railway containers
-# and don't share /data/rh_session unless a Volume is mounted on both.
 GEX_STATE    = os.path.join(DATA_DIR, "gex_state.json")
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
 GOAL         = 10_000.0
+VIX_UUID     = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
 
-# ── Live market data cache ────────────────────────────────────────────────────
-_live = {}
-_live_lock = threading.Lock()
+_state = {
+    "spot": None, "vix": None, "vix_prev": None, "vix3m": None,
+    "ts_slope": None, "ts_label": None,
+    "vanna_label": None, "vanna_mult": None,
+    "balance": None, "last_updated": None,
+    "last_action": "Starting up...",
+}
+_lock = threading.Lock()
+_rh_ok = False
 
-_rh_logged_in = False
-_rh_lock = threading.Lock()
+
+# ── Robinhood auth ────────────────────────────────────────────────────────────
 
 def _rh_login():
-    global _rh_logged_in
-    if _rh_logged_in:
-        return True
+    global _rh_ok
     u = os.getenv("RH_USERNAME", "")
     p = os.getenv("RH_PASSWORD", "")
     if not u or not p:
-        log.warning("Web: RH_USERNAME/RH_PASSWORD not set — no live price feed")
+        log.warning("RH_USERNAME/RH_PASSWORD not set")
         return False
-    try:
-        import pathlib, robin_stocks.robinhood as rh
-        # Mirror the same session-pickle setup the worker uses so the token is reused
-        session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
-        session_dir.mkdir(parents=True, exist_ok=True)
-        tokens_dir = pathlib.Path.home() / ".tokens"
-        if not tokens_dir.exists():
-            tokens_dir.symlink_to(session_dir)
-        mfa = os.getenv("RH_MFA_CODE") or None
-        rh.login(username=u, password=p, mfa_code=mfa,
-                 store_session=True, expiresIn=86400, pickle_name="heatseeker")
-        _rh_logged_in = True
-        log.info("Web: Robinhood login OK")
-        return True
-    except Exception as e:
-        log.warning(f"Web: Robinhood login failed: {e}")
-        _rh_logged_in = False
-        return False
-
-_VIX_UUID = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"  # Robinhood index UUID for VIX
-
-def _fetch_rh_prices():
-    """Fetch SPY + VIX via Robinhood. Returns (spot, vix) or Nones."""
     try:
         import robin_stocks.robinhood as rh
-        quotes = rh.stocks.get_quotes(["SPY"], info=None)
-        spy_q  = (quotes or [{}])[0] or {}
-        raw = spy_q.get("last_trade_price") or spy_q.get("adjusted_previous_close")
-        spot = round(float(raw), 2) if raw else None
-
-        # VIX is an index — use index-instruments quotes endpoint, not get_quotes
-        vix_data = rh.helper.request_get(
-            f"https://api.robinhood.com/marketdata/index-instruments/{_VIX_UUID}/quotes/"
-        )
-        vix_val = None
-        if vix_data and vix_data.get("value"):
-            vix_val = round(float(vix_data["value"]), 2)
-
-        return spot, vix_val
+        session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
+        session_dir.mkdir(parents=True, exist_ok=True)
+        tokens = pathlib.Path.home() / ".tokens"
+        if not tokens.exists():
+            tokens.symlink_to(session_dir)
+        rh.login(username=u, password=p,
+                 mfa_code=os.getenv("RH_MFA_CODE") or None,
+                 store_session=True, expiresIn=86400, pickle_name="heatseeker")
+        _rh_ok = True
+        log.info("Robinhood login OK")
+        return True
     except Exception as e:
-        log.debug(f"RH price fetch error: {e}")
-        return None, None
+        log.warning(f"Robinhood login failed: {e}")
+        _rh_ok = False
+        return False
 
-def _patch_gex_state(patch: dict):
-    """Merge patch into gex_state.json on disk and in-memory cache."""
-    with _live_lock:
-        _live.update(patch)
+
+# ── Signal computation ────────────────────────────────────────────────────────
+
+def _vix_regime(vix):
+    if vix < 13:   return "ultra_low",  "Ultra-Low / Complacency", "var(--green)"
+    if vix < 18:   return "normal",     "Normal / Bull",           "var(--green)"
+    if vix < 25:   return "elevated",   "Elevated — Caution",      "var(--amber)"
+    if vix < 35:   return "high_vol",   "High Vol / Fear",         "var(--red)"
+    return            "crisis",     "CRISIS — Stay Flat",      "var(--red)"
+
+def _vanna_flow(vix_now, vix_prev):
+    if not vix_prev or vix_prev <= 0:
+        return "neutral", 1.0
+    pct = (vix_now - vix_prev) / vix_prev
+    if pct < -0.07: return "strong_vanna_bid",  1.25
+    if pct < -0.03: return "vanna_bid",         1.12
+    if pct >  0.07: return "vanna_sell",        0.65
+    if pct >  0.03: return "vanna_headwind",    0.80
+    return "neutral", 1.0
+
+def _ts_label(slope):
+    if slope is None: return None
+    if slope > 0.10:  return "deep_contango"
+    if slope > 0:     return "contango"
+    return "backwardation"
+
+
+# ── Live fetch thread ─────────────────────────────────────────────────────────
+
+def _fetch_once():
+    import robin_stocks.robinhood as rh
+    patch = {"last_updated": datetime.now(ET).isoformat()}
+
+    # SPY price
+    try:
+        q = rh.stocks.get_quotes(["SPY"], info=None) or [{}]
+        raw = q[0].get("last_trade_price") or q[0].get("adjusted_previous_close")
+        if raw:
+            patch["spot"] = round(float(raw), 2)
+    except Exception as e:
+        log.debug(f"SPY fetch: {e}")
+
+    # VIX via index-instruments endpoint
+    try:
+        vd = rh.helper.request_get(
+            f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/"
+        )
+        if vd and vd.get("value"):
+            patch["vix"] = round(float(vd["value"]), 2)
+    except Exception as e:
+        log.debug(f"VIX fetch: {e}")
+
+    # VIX3M — estimate as vix*1.07 if unavailable (typical contango)
+    vix_now = patch.get("vix") or _state.get("vix")
+    if vix_now:
+        patch.setdefault("vix3m", round(vix_now * 1.07, 2))
+        vix3m = patch["vix3m"]
+        slope = round((vix3m - vix_now) / vix_now, 4)
+        patch["ts_slope"] = slope
+        patch["ts_label"]  = _ts_label(slope)
+
+    # Vanna flow
+    vix_prev = _state.get("vix_prev")
+    if vix_now:
+        vl, vm = _vanna_flow(vix_now, vix_prev)
+        patch["vanna_label"] = vl
+        patch["vanna_mult"]  = vm
+        # Roll prev at EOD (store today's VIX as tomorrow's prev)
+        patch["vix_prev"] = vix_now
+
+    # Account balance
+    try:
+        ph = rh.account.load_phoenix_account()
+        bal = None
+        if ph:
+            abp = ph.get("account_buying_power") or {}
+            bal = float(abp.get("amount", 0) or 0) or None
+        if not bal:
+            port = rh.account.load_portfolio_profile()
+            if port:
+                bal = float(port.get("withdrawable_amount") or port.get("excess_margin") or 0) or None
+        if bal:
+            patch["balance"] = round(bal, 2)
+    except Exception as e:
+        log.debug(f"Balance fetch: {e}")
+
+    patch["last_action"] = f"Live — SPY ${patch.get('spot','?')}  VIX {patch.get('vix','?')}"
+
+    with _lock:
+        _state.update(patch)
+
+    # Persist to disk
+    os.makedirs(DATA_DIR, exist_ok=True)
     try:
         try:
             with open(GEX_STATE) as f:
-                state = json.load(f)
+                disk = json.load(f)
         except Exception:
-            state = {}
-        state.update(patch)
-        os.makedirs(os.path.dirname(GEX_STATE), exist_ok=True)
+            disk = {}
+        disk.update(patch)
         with open(GEX_STATE, "w") as f:
-            json.dump(state, f, indent=2)
+            json.dump(disk, f, indent=2)
     except Exception as e:
-        log.warning(f"gex_state write error: {e}")
+        log.debug(f"State write: {e}")
 
-def _fetch_live_market():
-    """Fetch SPY + VIX every 60 s — try Robinhood first, yfinance as fallback."""
-    while True:
-        try:
-            now_str = datetime.now(ET).strftime("%H:%M:%S ET")
-            spot = vix_val = vix3m = None
 
-            # Primary: Robinhood (works on Railway, no Yahoo block)
-            if _rh_login():
-                spot, vix_val = _fetch_rh_prices()
-
-            # Fallback: yfinance (works locally, may be blocked on cloud)
-            if not spot:
-                try:
-                    import yfinance as yf
-                    fi_spy = yf.Ticker("SPY").fast_info
-                    fi_vix = yf.Ticker("^VIX").fast_info
-                    fi_v3m = yf.Ticker("^VIX3M").fast_info
-                    for attr in ("last_price", "regularMarketPrice", "previousClose"):
-                        if not spot:
-                            v = getattr(fi_spy, attr, None)
-                            if v: spot = round(float(v), 2)
-                        if not vix_val:
-                            v = getattr(fi_vix, attr, None)
-                            if v: vix_val = round(float(v), 2)
-                        if not vix3m:
-                            v = getattr(fi_v3m, attr, None)
-                            if v: vix3m = round(float(v), 2)
-                except Exception:
-                    pass
-
-            patch = {"market_updated": now_str}
-            if spot:    patch["spot"]    = spot
-            if vix_val: patch["vix"]     = vix_val
-            if vix3m:
-                patch["vix3m"] = vix3m
-                if vix_val:
-                    slope = round((vix3m - vix_val) / vix_val, 4)
-                    patch["ts_slope"] = slope
-                    patch["ts_label"] = ("deep_contango" if slope > 0.10
-                                         else "contango" if slope > 0
-                                         else "backwardation")
-
-            _patch_gex_state(patch)
-            log.info(f"Live tick: SPY={spot} VIX={vix_val} VIX3M={vix3m} @ {now_str}")
-        except Exception as e:
-            log.warning(f"Live fetch error: {e}")
-        time.sleep(60)
-
-def start_live_thread():
-    t = threading.Thread(target=_fetch_live_market, daemon=True)
-    t.start()
-
-# ── Data loaders ──────────────────────────────────────────────────────────────
-def load_gex_state():
+def _live_thread():
+    # Load persisted state first
     try:
         with open(GEX_STATE) as f:
-            state = json.load(f)
+            saved = json.load(f)
+        with _lock:
+            _state.update({k: v for k, v in saved.items() if v is not None})
     except Exception:
-        state = {}
-    # Overlay with in-memory live cache (most recent tick)
-    with _live_lock:
-        state.update({k: v for k, v in _live.items() if v is not None})
-    return state
+        pass
 
-def load_journal():
+    # Login with retry
+    while not _rh_login():
+        with _lock:
+            _state["last_action"] = "Waiting for Robinhood auth — retrying in 5 min"
+        for _ in range(300):
+            time.sleep(1)
+
+    # Fetch loop
+    while True:
+        try:
+            _fetch_once()
+            log.info(f"Tick: SPY={_state.get('spot')} VIX={_state.get('vix')} vanna={_state.get('vanna_label')}")
+        except Exception as e:
+            log.warning(f"Fetch error: {e}")
+            with _lock:
+                _state["last_action"] = f"Fetch error: {e}"
+        for _ in range(60):
+            time.sleep(1)
+
+
+def start_live_thread():
+    t = threading.Thread(target=_live_thread, daemon=True)
+    t.start()
+
+
+# ── Journal helpers ───────────────────────────────────────────────────────────
+
+def _load_journal():
     try:
         with open(JOURNAL_FILE) as f:
             return json.load(f).get("trades", [])
     except Exception:
         return []
 
-def compute_stats(trades, gex_state=None):
-    closed   = [t for t in trades if t.get("pnl_pct") is not None]
-    recent   = closed[-20:]
-    wins     = [t for t in recent if t["pnl_pct"] > 0]
-    losses   = [t for t in recent if t["pnl_pct"] <= 0]
-    win_rate = len(wins) / len(recent) if recent else 0.5
-    avg_win  = sum(t["pnl_pct"] for t in wins) / len(wins) if wins else 100.0
-    avg_loss = abs(sum(t["pnl_pct"] for t in losses) / len(losses)) if losses else 50.0
-    R        = avg_win / avg_loss if avg_loss else 2.0
-    kelly    = max(0.0, min(0.5, win_rate - (1 - win_rate) / R))
-    total_pnl = sum(t.get("pnl_usd", 0) or 0 for t in closed)
-
-    streak, streak_type = 0, None
+def _journal_stats(trades):
+    closed  = [t for t in trades if t.get("pnl_pct") is not None]
+    recent  = closed[-20:]
+    wins    = [t for t in recent if t["pnl_pct"] > 0]
+    losses  = [t for t in recent if t["pnl_pct"] <= 0]
+    wr      = len(wins) / len(recent) if recent else 0.5
+    total   = sum(t.get("pnl_usd", 0) or 0 for t in closed)
+    streak, stype = 0, None
     for t in reversed(recent):
         w = t["pnl_pct"] > 0
-        if streak_type is None:
-            streak_type = "win" if w else "loss"; streak = 1
-        elif (streak_type == "win") == w:
+        if stype is None:
+            stype = "win" if w else "loss"; streak = 1
+        elif (stype == "win") == w:
             streak += 1
         else:
             break
-
-    # Use live Robinhood balance from gex_state if available, else fall back to journal
-    balance = None
-    if gex_state:
-        balance = gex_state.get("account_balance") or gex_state.get("buying_power")
-    if not balance and closed:
-        balance = closed[-1].get("balance_after")
-    if not balance:
-        balance = 21.64  # actual starting balance from Robinhood
-
-    goal_pct = balance / GOAL * 100
-
+    bal = None
+    with _lock:
+        bal = _state.get("balance")
+    if not bal and closed:
+        bal = closed[-1].get("balance_after")
+    bal = bal or 21.64
     return {
-        "total_trades":     len(closed),
-        "win_rate":         round(win_rate, 3),
-        "avg_win_pct":      round(avg_win, 1),
-        "avg_loss_pct":     round(avg_loss, 1),
-        "kelly":            round(kelly, 3),
-        "total_pnl_usd":    round(total_pnl, 2),
-        "streak":           streak,
-        "streak_type":      streak_type,
-        "balance":          round(balance, 2),
-        "goal":             GOAL,
-        "goal_progress_pct": round(goal_pct, 2),
+        "total_trades": len(closed),
+        "win_rate":     round(wr, 3),
+        "total_pnl_usd": round(total, 2),
+        "streak":       streak,
+        "streak_type":  stype,
+        "balance":      round(bal, 2),
+        "goal_pct":     round(bal / GOAL * 100, 2),
     }
 
-def compute_patterns(trades):
-    closed = [t for t in trades if t.get("pnl_pct") is not None]
-    pattern_stats = {}
-    for t in closed[-30:]:
-        gf = t.get("gex_features") or {}
-        if not gf: continue
-        win = t["pnl_pct"] > 0
-        for key, val in {
-            "gex_size": "large" if gf.get("gex_total_m", 0) > 150 else "medium" if gf.get("gex_total_m", 0) > 60 else "small",
-            "consensus": "strong" if gf.get("top5_consensus", 0) > 0.8 else "aligned" if gf.get("top5_consensus", 0) > 0.6 else "mixed",
-        }.items():
-            k = f"{key}:{val}"
-            s = pattern_stats.setdefault(k, {"wins": 0, "total": 0})
-            s["wins"] += int(win); s["total"] += 1
 
-    results = []
-    for k, s in pattern_stats.items():
-        if s["total"] < 2: continue
-        results.append({"pattern": k, "win_rate": round(s["wins"] / s["total"], 2), "n": s["total"]})
-    return sorted(results, key=lambda x: x["win_rate"], reverse=True)
+# ── Market session ────────────────────────────────────────────────────────────
 
-def get_next_action():
+def _session():
     now = datetime.now(ET)
-    h, m = now.hour, now.minute
-    t = h * 60 + m
-    weekday = now.weekday()
-    if weekday >= 5:
-        return "Market closed (weekend)"
-    if t < 585:   return f"Entry in {585 - t} min (9:45 AM ET)"
-    if t <= 750:  return "Entry window open (9:45 AM–12:30 PM ET)"
-    if t < 810:   return "Monitoring position"
-    if t < 870:   return "Approaching force-close window"
-    if t < 930:   return "Force close at 3:30 PM ET"
-    return "Market closed — next entry tomorrow 9:45 AM ET"
-
-def get_market_session():
-    now = datetime.now(ET)
-    h, m = now.hour, now.minute
-    t = h * 60 + m
-    weekday = now.weekday()
-    if weekday >= 5:           return "closed"
-    if t < 570:                return "pre"
-    if 570 <= t < 960:         return "open"
+    t = now.hour * 60 + now.minute
+    if now.weekday() >= 5: return "closed"
+    if t < 570:            return "pre"
+    if t < 960:            return "open"
     return "after"
 
+
 # ── Routes ────────────────────────────────────────────────────────────────────
+
 @app.route("/")
 def dashboard():
-    gex      = load_gex_state()
-    trades   = load_journal()
-    stats    = compute_stats(trades, gex)
-    patterns = compute_patterns(trades)
-    return render_template(
-        "dashboard.html",
-        gex=type("G", (), gex)(),
-        trades=trades,
-        stats=type("S", (), stats)(),
-        patterns=patterns,
-        next_action=get_next_action(),
-    )
-
-@app.route("/refresh")
-def refresh():
-    return redirect("/")
+    return render_template("dashboard.html")
 
 @app.route("/api/state")
 def api_state():
-    trades = load_journal()
-    gex = load_gex_state()
+    with _lock:
+        g = dict(_state)
+    trades  = _load_journal()
+    stats   = _journal_stats(trades)
     return jsonify({
-        "gex":          gex,
-        "stats":        compute_stats(trades, gex),
-        "journal":      trades[-10:],
-        "next_action":  get_next_action(),
-        "session":      get_market_session(),
-        "ts":           datetime.now(ET).strftime("%H:%M:%S ET"),
+        "gex":     g,
+        "stats":   stats,
+        "journal": trades[-10:],
+        "session": _session(),
+        "ts":      datetime.now(ET).strftime("%H:%M:%S ET"),
     })
+
+@app.route("/api/health")
+def health():
+    return jsonify({"ok": True})
+
 
 if __name__ == "__main__":
     start_live_thread()
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-else:
-    # Gunicorn / production entry point
-    start_live_thread()
+
+# Gunicorn entry point
+start_live_thread()

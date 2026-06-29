@@ -2,1296 +2,434 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HEATSEEKER — GEX Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HEATSEEKER — Vol Signal Dashboard</title>
 <style>
-:root {
-  --bg:        #080c14;
-  --bg2:       #0d1320;
-  --bg3:       #111827;
-  --border:    #1e2d40;
-  --border2:   #243447;
-  --amber:     #f0a500;
-  --amber-dim: #7a5200;
-  --green:     #00c87a;
-  --green-dim: #003d26;
-  --red:       #ff3d5a;
-  --red-dim:   #3d0012;
-  --blue:      #38bdf8;
-  --blue-dim:  #083344;
-  --white:     #e8f0fe;
-  --muted:     #4a6080;
-  --muted2:    #6b8299;
-  --font:      'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+:root{
+  --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--bg4:#22222e;
+  --green:#00ff88;--red:#ff3366;--amber:#ffaa00;--blue:#4488ff;
+  --white:#e8e8f0;--muted:#666680;--muted2:#888899;--border:#2a2a3a;--card-r:10px;
 }
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:var(--bg); color:var(--white); font-family:var(--font); font-size:12px; min-height:100vh; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--white);font-family:'SF Mono',monospace;font-size:13px;min-height:100vh;}
 
-/* ── TOP BAR ── */
-.topbar {
-  background:var(--bg2);
-  border-bottom:1px solid var(--amber-dim);
-  padding:0 20px;
-  height:48px;
-  display:flex;
-  align-items:center;
-  gap:0;
-  position:sticky;
-  top:0;
-  z-index:200;
-}
-.topbar-logo {
-  font-size:16px;
-  font-weight:900;
-  color:var(--amber);
-  letter-spacing:4px;
-  padding-right:24px;
-  border-right:1px solid var(--border2);
-  margin-right:24px;
-}
-.topbar-metric {
-  display:flex;
-  flex-direction:column;
-  padding:0 16px;
-  border-right:1px solid var(--border);
-  line-height:1.3;
-}
-.topbar-metric:last-of-type { border-right:none; }
-.tm-lbl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-.tm-val { font-size:14px; font-weight:bold; }
-.topbar-right { margin-left:auto; display:flex; align-items:center; gap:20px; font-size:11px; }
-.pill-live { background:var(--green-dim); border:1px solid var(--green); color:var(--green); padding:3px 10px; border-radius:20px; font-size:10px; font-weight:bold; display:flex; align-items:center; gap:5px; }
-.pill-offline { background:var(--red-dim); border:1px solid var(--red); color:var(--red); padding:3px 10px; border-radius:20px; font-size:10px; font-weight:bold; }
-.dot-pulse { width:6px; height:6px; border-radius:50%; background:var(--green); animation:pulse 1.4s infinite; display:inline-block; }
-@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+/* Header */
+.hdr{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.hdr-logo{font-size:16px;font-weight:700;color:var(--amber);letter-spacing:2px;display:flex;align-items:center;gap:6px;}
+.hdr-sep{color:var(--border);}
+.hdr-item{display:flex;flex-direction:column;align-items:center;}
+.hdr-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.hdr-val{font-size:15px;font-weight:700;color:var(--white);}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.acct-badge{font-size:10px;color:var(--muted2);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
+.clock{font-size:13px;color:var(--muted2);}
+.pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.pill-live{background:#0a2a0a;border:1px solid var(--green);color:var(--green);}
+.pill-offline{background:#2a0a0a;border:1px solid var(--red);color:var(--red);}
+.dot-pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.4s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.cd-badge{font-size:10px;color:var(--muted);background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);}
 
-/* ── MAIN LAYOUT ── */
-.main { display:grid; grid-template-columns:1fr 380px; gap:0; height:calc(100vh - 48px); overflow:hidden; }
-.col-left  { overflow-y:auto; border-right:1px solid var(--border); }
-.col-right { overflow-y:auto; }
+/* Layout */
+.main{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px;max-width:1400px;margin:0 auto;}
+@media(max-width:900px){.main{grid-template-columns:1fr;}}
 
-/* ── SECTION HEADERS ── */
-.sec-hdr {
-  padding:10px 16px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  background:var(--bg2);
-  position:sticky;
-  top:0;
-  z-index:10;
-}
-.sec-title { font-size:10px; text-transform:uppercase; letter-spacing:2px; color:var(--amber); font-weight:bold; }
-.sec-meta  { font-size:10px; color:var(--muted2); }
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:16px;}
+.card-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:12px;}
 
-/* ── GEX KEY LEVELS BAR ── */
-.levels-bar {
-  display:flex;
-  align-items:stretch;
-  border-bottom:1px solid var(--border);
-  background:var(--bg2);
-}
-.level-cell {
-  flex:1;
-  padding:10px 14px;
-  border-right:1px solid var(--border);
-  display:flex;
-  flex-direction:column;
-  gap:3px;
-}
-.level-cell:last-child { border-right:none; }
-.lc-label { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-.lc-val   { font-size:16px; font-weight:bold; line-height:1; }
-.lc-sub   { font-size:9px; color:var(--muted2); margin-top:2px; }
-.lc-call-wall  { border-top:2px solid var(--green); }
-.lc-king       { border-top:2px solid var(--amber); }
-.lc-spot       { border-top:2px solid var(--white); }
-.lc-flip       { border-top:2px solid var(--blue); }
-.lc-put-wall   { border-top:2px solid var(--red); }
+/* Signal grid */
+.sig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;}
+@media(max-width:700px){.sig-grid{grid-template-columns:1fr 1fr;}}
+.sig-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:14px;transition:border-color .3s,box-shadow .3s;}
+.sig-card.active-call{border-color:var(--green);box-shadow:0 0 14px rgba(0,255,136,.14);}
+.sig-card.active-put{border-color:var(--red);box-shadow:0 0 14px rgba(255,51,102,.14);}
+.sig-label{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:6px;}
+.sig-val{font-size:20px;font-weight:700;color:var(--white);margin-bottom:4px;}
+.sig-sub{font-size:11px;color:var(--muted2);}
+.sig-bar-wrap{height:4px;background:var(--bg4);border-radius:2px;margin-top:8px;overflow:hidden;}
+.sig-bar{height:100%;border-radius:2px;transition:width .5s,background .5s;}
 
-/* ── SIGNAL BANNER ── */
-.signal-banner {
-  padding:12px 16px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  align-items:center;
-  gap:12px;
-  font-size:11px;
-  background:var(--bg3);
-}
-.signal-banner.call-active { background:#001a0a; border-bottom-color:var(--green); }
-.signal-banner.put-active  { background:#1a0008; border-bottom-color:var(--red); }
-.sig-icon { font-size:18px; }
-.sig-text { flex:1; line-height:1.5; }
-.sig-badge {
-  padding:6px 16px;
-  border-radius:4px;
-  font-size:13px;
-  font-weight:bold;
-  letter-spacing:1px;
-}
-.sig-call { background:var(--green-dim); color:var(--green); border:1px solid var(--green); }
-.sig-put  { background:var(--red-dim);   color:var(--red);   border:1px solid var(--red); }
-.sig-flat { background:var(--bg3);       color:var(--muted2); border:1px solid var(--border2); }
+/* Banner */
+.banner{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:var(--card-r);border:1px solid var(--border);margin-bottom:16px;background:var(--bg3);transition:background .3s,border-color .3s;}
+.banner.call{background:#0a1a0f;border-color:var(--green);}
+.banner.put{background:#1a0a0f;border-color:var(--red);}
+.banner-icon{font-size:22px;}
+.banner-text{flex:1;}
+.banner-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.banner-main{font-size:14px;font-weight:600;}
+.banner-badge{padding:6px 16px;border-radius:6px;font-size:13px;font-weight:700;}
+.badge-call{background:rgba(0,255,136,.15);color:var(--green);border:1px solid var(--green);}
+.badge-put{background:rgba(255,51,102,.15);color:var(--red);border:1px solid var(--red);}
+.badge-flat{background:var(--bg4);color:var(--muted);border:1px solid var(--border);}
 
-/* ── GEX STRIKE LADDER ── */
-.ladder-wrap { padding:0; }
-table.ladder {
-  width:100%;
-  border-collapse:collapse;
-  font-family:var(--font);
-  font-size:11px;
-}
-table.ladder thead th {
-  padding:7px 10px;
-  text-align:right;
-  color:var(--muted);
-  font-size:9px;
-  text-transform:uppercase;
-  letter-spacing:1px;
-  border-bottom:1px solid var(--border2);
-  background:var(--bg2);
-  font-weight:normal;
-  position:sticky;
-  top:0;
-}
-table.ladder thead th.th-strike { text-align:center; }
-table.ladder thead th.th-bar    { text-align:center; min-width:140px; }
-table.ladder tbody tr { border-bottom:1px solid #111d2a; transition:background .1s; }
-table.ladder tbody tr:hover { background:#131f30; }
-table.ladder tbody td { padding:5px 10px; text-align:right; }
-table.ladder tbody td.td-strike {
-  text-align:center;
-  font-size:13px;
-  font-weight:bold;
-  color:var(--muted2);
-  width:80px;
-}
-table.ladder tbody td.td-bar { text-align:center; padding:5px 4px; }
+/* Chart */
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);overflow:hidden;margin-bottom:16px;}
+.chart-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);}
 
-/* Row highlights */
-tr.row-king    td             { background:#1a1200 !important; }
-tr.row-king    td.td-strike   { color:var(--amber) !important; font-size:14px; }
-tr.row-flip    td             { background:#041420 !important; }
-tr.row-flip    td.td-strike   { color:var(--blue) !important; }
-tr.row-spot    td             { background:#0d1520 !important; }
-tr.row-spot    td.td-strike   { color:var(--white) !important; font-weight:900; }
-tr.row-cwall   td.td-strike   { color:var(--green) !important; }
-tr.row-pwall   td.td-strike   { color:var(--red) !important; }
+/* Sidebar */
+.sidebar{display:flex;flex-direction:column;gap:16px;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.stat-item{background:var(--bg3);border-radius:6px;padding:10px;}
+.stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}
+.stat-val{font-size:16px;font-weight:700;}
+.goal-bar-bg{height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-top:8px;}
+.goal-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:3px;transition:width .5s;}
 
-.call-val { color:var(--green); }
-.put-val  { color:var(--red); }
-.net-pos  { color:var(--green); font-weight:bold; }
-.net-neg  { color:var(--red);   font-weight:bold; }
-.muted-val { color:var(--muted); }
+/* Journal */
+.journal-table{width:100%;border-collapse:collapse;font-size:11px;}
+.journal-table th{color:var(--muted);font-weight:400;text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);}
+.journal-table td{padding:5px 6px;border-bottom:1px solid #1a1a24;}
+.j-win{color:var(--green);font-weight:700;}
+.j-loss{color:var(--red);font-weight:700;}
+.j-open{color:var(--amber);}
 
-/* GEX bar in table */
-.gex-bar-cell { position:relative; height:18px; width:140px; margin:0 auto; display:flex; align-items:center; }
-.gex-bar-center { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border2); }
-.gex-bar-fill-call { position:absolute; left:50%; height:10px; top:4px; border-radius:0 3px 3px 0; background:var(--green); opacity:.85; }
-.gex-bar-fill-put  { position:absolute; right:50%; height:10px; top:4px; border-radius:3px 0 0 3px; background:var(--red); opacity:.85; }
-
-/* Row tag markers */
-.row-tag {
-  display:inline-block;
-  font-size:8px;
-  padding:1px 4px;
-  border-radius:2px;
-  margin-left:4px;
-  vertical-align:middle;
-  font-weight:bold;
-  letter-spacing:.5px;
-}
-.tag-king  { background:var(--amber-dim); color:var(--amber); border:1px solid var(--amber); }
-.tag-flip  { background:var(--blue-dim);  color:var(--blue);  border:1px solid var(--blue); }
-.tag-spot  { background:#1a2030; color:var(--white); border:1px solid #4a6080; }
-.tag-cwall { background:var(--green-dim); color:var(--green); border:1px solid var(--green); }
-.tag-pwall { background:var(--red-dim);   color:var(--red);   border:1px solid var(--red); }
-
-/* ── RIGHT PANEL ── */
-.rp-block { border-bottom:1px solid var(--border); }
-.rp-body  { padding:14px 16px; }
-
-/* Stats grid */
-.stats-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.stat-cell { background:var(--bg3); border:1px solid var(--border2); border-radius:4px; padding:10px 12px; }
-.stat-num  { font-size:20px; font-weight:bold; line-height:1.1; }
-.stat-lbl  { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:3px; }
-
-/* Goal bar */
-.goal-bar-wrap { background:#0a1020; border-radius:3px; height:12px; overflow:hidden; margin:8px 0 4px; }
-.goal-bar-fill { height:100%; background:linear-gradient(90deg,#005c30,var(--green)); border-radius:3px; transition:width .6s; }
-
-/* KV rows */
-.kv { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid #111d2a; }
-.kv:last-child { border-bottom:none; }
-.kv-lbl { color:var(--muted2); font-size:11px; }
-.kv-val { font-size:12px; font-weight:bold; }
-
-/* Confidence bar */
-.conf-track { background:#0a1020; border-radius:3px; height:6px; overflow:hidden; flex:1; margin:0 10px; }
-.conf-fill  { height:100%; border-radius:3px; transition:width .5s; }
-
-/* Journal table */
-table.journal { width:100%; border-collapse:collapse; font-size:10px; }
-table.journal th { padding:5px 8px; color:var(--muted); font-size:9px; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border2); font-weight:normal; }
-table.journal td { padding:5px 8px; border-bottom:1px solid #111d2a; }
-table.journal tr:last-child td { border-bottom:none; }
-.j-win  { color:var(--green); font-weight:bold; }
-.j-loss { color:var(--red);   font-weight:bold; }
-.j-open { color:var(--amber); }
-
-/* Countdown */
-.cd-badge { font-size:10px; color:var(--amber); font-weight:bold; }
-
-/* Empty state */
-.empty-state { padding:32px; text-align:center; color:var(--muted); line-height:1.8; }
-.empty-icon  { font-size:28px; margin-bottom:8px; }
-
-/* Pattern rows */
-.pat-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #111d2a; font-size:10px; }
-.pat-row:last-child { border-bottom:none; }
-.pat-badge { padding:1px 6px; border-radius:2px; font-size:9px; font-weight:bold; }
-
-/* ── Creator Signals panel ── */
-.creator-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px 16px; }
-.creator-card {
-  background:var(--bg3);
-  border:1px solid var(--border2);
-  border-radius:4px;
-  padding:10px 12px;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-.creator-card.full-width { grid-column: 1 / -1; }
-.cc-lbl  { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-.cc-val  { font-size:15px; font-weight:bold; line-height:1.1; }
-.cc-sub  { font-size:9px; color:var(--muted2); margin-top:1px; }
-.cc-bar-wrap { height:5px; background:#0a1020; border-radius:3px; margin-top:5px; overflow:hidden; }
-.cc-bar-fill { height:100%; border-radius:3px; transition:width .5s; }
-
-/* ── Options Flow panel ── */
-.flow-ratio-wrap { padding:10px 16px 6px; }
-.flow-ratio-bar  { display:flex; height:22px; border-radius:3px; overflow:hidden; margin:6px 0 4px; }
-.flow-ratio-call { background:var(--green); display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:bold; color:#000; transition:width .5s; white-space:nowrap; overflow:hidden; }
-.flow-ratio-put  { background:var(--red);   display:flex; align-items:center; justify-content:flex-end; padding:0 8px; font-size:10px; font-weight:bold; color:#fff; transition:width .5s; white-space:nowrap; overflow:hidden; }
-.flow-stat-row   { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted2); }
-
-table.flow-feed { width:100%; border-collapse:collapse; font-size:11px; }
-table.flow-feed thead th { padding:5px 10px; font-size:9px; letter-spacing:1px; color:var(--muted); border-bottom:1px solid var(--border); text-align:right; font-weight:normal; text-transform:uppercase; }
-table.flow-feed thead th:first-child { text-align:left; }
-table.flow-feed tbody tr { border-bottom:1px solid #111d2a; }
-table.flow-feed tbody tr:hover { background:#131f30; }
-table.flow-feed tbody td { padding:5px 10px; text-align:right; }
-table.flow-feed tbody td:first-child { text-align:left; }
-.flow-call { color:var(--green); font-weight:bold; }
-.flow-put  { color:var(--red);   font-weight:bold; }
-
-/* TradingView chart */
-#tv-chart { height:340px; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width:4px; height:4px; }
-::-webkit-scrollbar-track { background:var(--bg); }
-::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
-
-/* Responsive */
-@media(max-width:900px){
-  .main { grid-template-columns:1fr; height:auto; }
-  .col-left,.col-right { overflow-y:visible; }
-  .levels-bar { flex-wrap:wrap; }
-  .level-cell { min-width:50%; }
-}
+/* Vol surface table */
+.vol-table td{padding:5px 0;font-size:12px;}
+.vol-table td:last-child{text-align:right;font-weight:700;}
 </style>
 </head>
 <body>
 
-<!-- ══ TOP BAR ══ -->
-<div class="topbar">
-  <div class="topbar-logo">⚡ HEATSEEKER</div>
-
-  <div class="topbar-metric">
-    <span class="tm-lbl">SPY</span>
-    <span class="tm-val" id="hdr-spy" style="color:var(--green)">—</span>
+<!-- Header -->
+<div class="hdr">
+  <div class="hdr-logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffaa00"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+    HEATSEEKER
   </div>
-  <div class="topbar-metric">
-    <span class="tm-lbl">VIX</span>
-    <span class="tm-val" id="hdr-vix" style="color:var(--amber)">—</span>
-  </div>
-  <div class="topbar-metric">
-    <span class="tm-lbl">Signal</span>
-    <span class="tm-val" id="hdr-signal" style="color:var(--muted2)">SCAN</span>
-  </div>
-  <div class="topbar-metric">
-    <span class="tm-lbl">King Node</span>
-    <span class="tm-val" id="hdr-king" style="color:var(--amber)">—</span>
-  </div>
-  <div class="topbar-metric">
-    <span class="tm-lbl">Balance</span>
-    <span class="tm-val" id="hdr-balance" style="color:var(--green)">${{ "{:.2f}".format(stats.balance) }}</span>
-  </div>
-
-  <div class="topbar-right">
-    <span style="color:var(--muted)">Acct <strong style="color:var(--white)">634079917</strong></span>
-    <span id="clock" style="color:var(--muted2);font-size:11px">--:--:-- ET</span>
-    <span id="conn-pill" class="pill-live"><span class="dot-pulse"></span>LIVE</span>
-    <span class="cd-badge" id="refresh-cd">↻ 60s</span>
+  <div class="hdr-sep">|</div>
+  <div class="hdr-item"><span class="hdr-label">SPY</span><span class="hdr-val" id="hdr-spy">—</span></div>
+  <div class="hdr-item"><span class="hdr-label">VIX</span><span class="hdr-val" id="hdr-vix" style="color:var(--muted2)">—</span></div>
+  <div class="hdr-item"><span class="hdr-label">Signal</span><span class="hdr-val" id="hdr-sig" style="color:var(--muted2)">FLAT</span></div>
+  <div class="hdr-item"><span class="hdr-label">Balance</span><span class="hdr-val" id="hdr-bal">$21.64</span></div>
+  <div class="hdr-right">
+    <span class="acct-badge">Acct 634079917</span>
+    <span class="clock" id="clock">—</span>
+    <span class="pill pill-live" id="conn-pill"><span class="dot-pulse"></span>LIVE</span>
+    <span class="cd-badge" id="cd">↻ 60s</span>
   </div>
 </div>
 
-<!-- ══ MAIN ══ -->
+<!-- Main -->
 <div class="main">
+<div>
 
-  <!-- ═══ LEFT: GEX LADDER ═══ -->
-  <div class="col-left">
+  <!-- Banner -->
+  <div class="banner" id="banner">
+    <div class="banner-icon" id="banner-icon">⚡</div>
+    <div class="banner-text">
+      <div class="banner-title">Bot Signal</div>
+      <div class="banner-main" id="banner-action">Connecting to Robinhood...</div>
+    </div>
+    <span class="banner-badge badge-flat" id="banner-badge">— FLAT</span>
+  </div>
 
-    <!-- Key Levels bar -->
-    <div class="levels-bar">
-      <div class="level-cell lc-call-wall">
-        <span class="lc-label">🟢 Call Wall</span>
-        <span class="lc-val" id="lv-cwall" style="color:var(--green)">{{ "${:.0f}".format(gex.call_wall) if gex.call_wall else "—" }}</span>
-        <span class="lc-sub">Dealer resistance</span>
-      </div>
-      <div class="level-cell lc-king">
-        <span class="lc-label">⚡ King Node</span>
-        <span class="lc-val" id="lv-king" style="color:var(--amber)">{{ "${:.0f}".format(gex.king_strike) if gex.king_strike else "—" }}</span>
-        <span class="lc-sub" id="lv-king-sub">{{ "{:+.1f}M".format(gex.king_gex_m) if gex.king_gex_m else "Price magnet" }}</span>
-      </div>
-      <div class="level-cell lc-spot">
-        <span class="lc-label">▶ SPY Now</span>
-        <span class="lc-val" id="lv-spot" style="color:var(--white)">{{ "${:.2f}".format(gex.spot) if gex.spot else "—" }}</span>
-        <span class="lc-sub" id="lv-spot-sub">{{ "vs prev ${:.2f}".format(gex.prev_close) if gex.prev_close else "—" }}</span>
-      </div>
-      <div class="level-cell lc-flip">
-        <span class="lc-label">⚫ Gamma Flip</span>
-        <span class="lc-val" id="lv-flip" style="color:var(--blue)">{{ "${:.0f}".format(gex.gamma_flip) if gex.gamma_flip else "—" }}</span>
-        <span class="lc-sub">Regime boundary</span>
-      </div>
-      <div class="level-cell lc-put-wall">
-        <span class="lc-label">🔴 Put Wall</span>
-        <span class="lc-val" id="lv-pwall" style="color:var(--red)">{{ "${:.0f}".format(gex.put_wall) if gex.put_wall else "—" }}</span>
-        <span class="lc-sub">Dealer support</span>
-      </div>
+  <!-- 6 signal cards -->
+  <div class="sig-grid">
+
+    <div class="sig-card">
+      <div class="sig-label">VIX Regime</div>
+      <div class="sig-val" id="vix-val">—</div>
+      <div class="sig-sub" id="vix-regime-lbl">—</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="vix-bar" style="width:0%"></div></div>
     </div>
 
-    <!-- Signal banner -->
-    <div class="signal-banner {% if gex.direction == 'call' %}call-active{% elif gex.direction == 'put' %}put-active{% endif %}" id="signal-banner">
-      <span class="sig-icon">{% if gex.direction == 'call' %}📈{% elif gex.direction == 'put' %}📉{% else %}🔍{% endif %}</span>
-      <span class="sig-text" id="sig-text" style="color:var(--muted2)">{{ gex.last_action or "Waiting for market — GEX scan fires every 15 min" }}</span>
-      <span id="sig-badge"
-        class="sig-badge {% if gex.direction == 'call' %}sig-call{% elif gex.direction == 'put' %}sig-put{% else %}sig-flat{% endif %}">
-        {% if gex.direction == 'call' %}▲ CALL{% elif gex.direction == 'put' %}▼ PUT{% else %}— FLAT{% endif %}
-      </span>
+    <div class="sig-card">
+      <div class="sig-label">Term Structure · Whaley</div>
+      <div class="sig-val" id="ts-val">—</div>
+      <div class="sig-sub" id="ts-sub">VIX / VIX3M slope</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="ts-bar" style="width:50%;background:var(--blue)"></div></div>
     </div>
 
-    <!-- GEX Strike Ladder -->
-    <div class="sec-hdr">
-      <span class="sec-title">GEX Strike Ladder</span>
-      <span class="sec-meta" id="ladder-meta">
-        {% if gex.last_updated %}Updated {{ gex.last_updated[-8:-3] if gex.last_updated else "—" }}{% else %}Populates at market open{% endif %}
-      </span>
+    <div class="sig-card">
+      <div class="sig-label">Vanna Flow · Karsan</div>
+      <div class="sig-val" id="vanna-val">—</div>
+      <div class="sig-sub" id="vanna-sub">VIX Δ → dealer bid/sell</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="vanna-bar" style="width:50%;background:var(--muted)"></div></div>
     </div>
 
-    <div class="ladder-wrap" id="ladder-wrap">
-      {% if gex.call_wall %}
-      <table class="ladder" id="ladder-table">
-        <thead>
-          <tr>
-            <th style="text-align:right">Call OI</th>
-            <th style="text-align:right">Call GEX</th>
-            <th class="th-strike">Strike</th>
-            <th class="th-bar">Net GEX</th>
-            <th style="text-align:left">Put GEX</th>
-            <th style="text-align:left">Put OI</th>
-          </tr>
-        </thead>
-        <tbody id="ladder-body">
-          <tr><td colspan="6" class="empty-state">Loading ladder...</td></tr>
-        </tbody>
-      </table>
-      {% else %}
-      <div class="empty-state">
-        <div class="empty-icon">⚡</div>
-        GEX Strike Ladder populates when the market opens<br>
-        <span style="font-size:10px;color:var(--muted)">Bot scans options chain every 15 min · 9:30 AM – 4:00 PM ET</span>
-      </div>
-      {% endif %}
+    <div class="sig-card">
+      <div class="sig-label">VIX3M / Slope</div>
+      <div class="sig-val" id="vix3m-val">—</div>
+      <div class="sig-sub" id="slope-sub">93-day forward vol</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="slope-bar" style="width:50%;background:var(--blue)"></div></div>
     </div>
 
-    <!-- Options Flow -->
-    <div class="sec-hdr">
-      <span class="sec-title">⚡ Options Flow</span>
-      <span class="sec-meta" id="flow-meta">Biggest prints by premium · updated every 15 min</span>
-    </div>
-    <div class="flow-ratio-wrap">
-      <div class="flow-stat-row">
-        <span><span style="color:var(--green)">▲ CALL</span>&nbsp;<span id="call-vol-total">—</span> contracts</span>
-        <span id="flow-ratio-label" style="color:var(--amber);font-weight:bold">— / —</span>
-        <span><span style="color:var(--red)">▼ PUT</span>&nbsp;<span id="put-vol-total">—</span> contracts</span>
-      </div>
-      <div class="flow-ratio-bar">
-        <div class="flow-ratio-call" id="flow-call-bar" style="width:50%">50%</div>
-        <div class="flow-ratio-put"  id="flow-put-bar"  style="width:50%">50%</div>
-      </div>
-    </div>
-    <div id="flow-feed-wrap">
-      <table class="flow-feed">
-        <thead>
-          <tr>
-            <th>Strike</th>
-            <th>Type</th>
-            <th>Volume</th>
-            <th>Premium $K</th>
-            <th>Bias</th>
-          </tr>
-        </thead>
-        <tbody id="flow-feed-body">
-          <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Flow data populates when market opens</td></tr>
-        </tbody>
-      </table>
+    <div class="sig-card">
+      <div class="sig-label">Account · Goal $10k</div>
+      <div class="sig-val" id="bal-val">$21.64</div>
+      <div class="sig-sub" id="goal-sub">0.2% of goal</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="goal-bar" style="width:0.2%;background:var(--blue)"></div></div>
     </div>
 
-    <!-- TradingView Chart -->
-    <div class="sec-hdr">
-      <span class="sec-title">📈 SPY 5-Min Chart</span>
-      <span class="sec-meta">RSI · MACD · Bollinger Bands</span>
-    </div>
-    <div id="tv-chart"></div>
-    <script src="https://s3.tradingview.com/tv.js"></script>
-    <script>
-    new TradingView.widget({
-      container_id:"tv-chart", autosize:true, symbol:"AMEX:SPY",
-      interval:"5", timezone:"America/New_York", theme:"dark", style:"1",
-      locale:"en", toolbar_bg:"#0d1320", enable_publishing:false,
-      hide_top_toolbar:false, save_image:false, withdateranges:true,
-      studies:["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies"],
-    });
-    </script>
-
-  </div><!-- /col-left -->
-
-  <!-- ═══ RIGHT PANEL ═══ -->
-  <div class="col-right">
-
-    <!-- Bot Analysis -->
-    <div class="rp-block">
-      <div class="sec-hdr">
-        <span class="sec-title">📡 Bot Analysis</span>
-        <span class="sec-meta" id="scan-ts">{{ gex.last_updated or "—" }}</span>
-      </div>
-      <div class="rp-body">
-
-        <!-- Confidence row -->
-        <div style="display:flex;align-items:center;margin-bottom:12px">
-          <span style="font-size:10px;color:var(--muted);min-width:70px">GEX CONF</span>
-          <div class="conf-track">
-            <div class="conf-fill" id="conf-fill"
-              style="width:{{ "{:.0f}".format((gex.confidence or 0)*100) }}%;
-                     background:{% if (gex.confidence or 0)>0.6 %}var(--green){% elif (gex.confidence or 0)>0.4 %}var(--amber){% else %}var(--red){% endif %}">
-            </div>
-          </div>
-          <span id="conf-pct" style="font-size:12px;font-weight:bold;min-width:36px;text-align:right;
-            color:{% if (gex.confidence or 0)>0.6 %}var(--green){% elif (gex.confidence or 0)>0.4 %}var(--amber){% else %}var(--red){% endif %}">
-            {{ "{:.0f}%".format((gex.confidence or 0)*100) }}
-          </span>
-        </div>
-
-        <div class="kv">
-          <span class="kv-lbl">Regime</span>
-          <span class="kv-val" id="regime-val">
-            {% if gex.regime_ok is not none %}
-              <span style="color:{% if gex.regime_ok %}var(--green){% else %}var(--amber){% endif %}">
-                {% if gex.regime_ok %}✅ Confirmed{% else %}⚠️ Misaligned{% endif %}
-              </span>
-            {% else %}—{% endif %}
-          </span>
-        </div>
-        <div class="kv">
-          <span class="kv-lbl">IVR</span>
-          <span class="kv-val" id="ivr-val">
-            {% if gex.ivr is not none %}
-              <span style="color:{% if gex.ivr < 30 %}var(--green){% elif gex.ivr < 50 %}var(--amber){% else %}var(--red){% endif %}">{{ gex.ivr }}
-              {% if gex.ivr < 30 %} (cheap){% elif gex.ivr < 50 %} (fair){% else %} (rich){% endif %}</span>
-            {% else %}—{% endif %}
-          </span>
-        </div>
-        <div class="kv">
-          <span class="kv-lbl">Next Action</span>
-          <span class="kv-val" id="next-action" style="color:var(--amber);font-size:10px">{{ next_action }}</span>
-        </div>
-        <div class="kv">
-          <span class="kv-lbl">Market Data</span>
-          <span class="kv-val" id="market-ts" style="color:var(--muted2);font-size:10px">{{ gex.market_updated or "—" }}</span>
-        </div>
-
-      </div>
+    <div class="sig-card" id="card-sig">
+      <div class="sig-label">Signal Output</div>
+      <div class="sig-val" id="sig-val" style="color:var(--muted)">FLAT</div>
+      <div class="sig-sub" id="sig-sub">Waiting for data</div>
+      <div class="sig-bar-wrap"><div class="sig-bar" id="sig-bar" style="width:0%"></div></div>
     </div>
 
-    <!-- Creator Signals -->
-    <div class="rp-block">
-      <div class="sec-hdr">
-        <span class="sec-title">🧬 Creator Signals</span>
-        <span class="sec-meta">Whaley · Galai · Brenner</span>
-      </div>
-      <div class="creator-grid">
+  </div>
 
-        <!-- VRP (Whaley) -->
-        <div class="creator-card">
-          <span class="cc-lbl">VRP · Whaley</span>
-          <span class="cc-val" id="cs-vrp-val">—</span>
-          <span class="cc-sub" id="cs-vrp-sub">IV vs realized spread</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-vrp-bar" style="width:0%;background:var(--green)"></div></div>
-        </div>
-
-        <!-- Term Structure (Whaley/Galai) -->
-        <div class="creator-card">
-          <span class="cc-lbl">Term Struct · Whaley</span>
-          <span class="cc-val" id="cs-ts-val">—</span>
-          <span class="cc-sub" id="cs-ts-sub">VIX / VIX3M slope</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-ts-bar" style="width:50%;background:var(--blue)"></div></div>
-        </div>
-
-        <!-- Jump Premium (Brenner) -->
-        <div class="creator-card">
-          <span class="cc-lbl">Jump Mult · Brenner</span>
-          <span class="cc-val" id="cs-jump-val">—</span>
-          <span class="cc-sub">0DTE intraday decay</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="cs-jump-bar" style="width:0%;background:var(--amber)"></div></div>
-        </div>
-
-        <!-- OPEX Gravity (Galai) -->
-        <div class="creator-card">
-          <span class="cc-lbl">OPEX Gravity · Galai</span>
-          <span class="cc-val" id="cs-opex-val">—</span>
-          <span class="cc-sub" id="cs-opex-sub">Put wall floors</span>
-        </div>
-
-        <!-- VIX3M row -->
-        <div class="creator-card full-width" style="flex-direction:row;align-items:center;gap:0">
-          <div style="flex:1;display:flex;flex-direction:column;gap:3px">
-            <span class="cc-lbl">VIX</span>
-            <span class="cc-val" id="cs-vix3m-vix" style="color:var(--amber)">—</span>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:3px;border-left:1px solid var(--border2);padding-left:12px">
-            <span class="cc-lbl">VIX3M</span>
-            <span class="cc-val" id="cs-vix3m-val" style="color:var(--blue)">—</span>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:3px;border-left:1px solid var(--border2);padding-left:12px">
-            <span class="cc-lbl">Slope</span>
-            <span class="cc-val" id="cs-vix3m-slope" style="color:var(--muted2)">—</span>
-          </div>
-        </div>
-
-      </div>
+  <!-- Chart -->
+  <div class="chart-card">
+    <div class="chart-header">⚡ SPY 5-MIN CHART · RSI · MACD · Bollinger Bands</div>
+    <div class="tradingview-widget-container">
+      <div id="tradingview_chart"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({
+        container_id:"tradingview_chart",symbol:"AMEX:SPY",interval:"5",
+        theme:"dark",style:"1",locale:"en",width:"100%",height:380,
+        hide_top_toolbar:false,save_image:false,
+        studies:["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies"]
+      });
+      </script>
     </div>
+  </div>
 
-    <!-- Monthly OPEX Rubber Band Cycle -->
-    <div class="rp-block">
-      <div class="rp-title">📅 Monthly OPEX Cycle
-        <span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px">Put wall → V-snap → New highs</span>
-      </div>
+</div>
 
-      <!-- Phase ribbon -->
-      <div style="display:flex;gap:2px;margin:10px 16px 4px;border-radius:4px;overflow:hidden;height:26px;font-size:10px">
-        <div id="opc-ph1" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">1·FLUSH</div>
-        <div id="opc-ph2" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">2·PIN</div>
-        <div id="opc-ph3" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">3·SNAP</div>
-        <div id="opc-ph4" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--muted);border-radius:3px;transition:all .4s">4·HIGH</div>
-      </div>
+<!-- Sidebar -->
+<div class="sidebar">
 
-      <!-- Metrics row -->
-      <div class="creator-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
-
-        <div class="creator-card">
-          <span class="cc-lbl">Phase</span>
-          <span class="cc-val" id="opc-phase-val" style="color:var(--amber)">—</span>
-          <span class="cc-sub" id="opc-phase-lbl">—</span>
-        </div>
-
-        <div class="creator-card">
-          <span class="cc-lbl">Put Wall</span>
-          <span class="cc-val" id="opc-wall-val" style="color:var(--blue)">—</span>
-          <span class="cc-sub">Monthly floor</span>
-        </div>
-
-        <div class="creator-card">
-          <span class="cc-lbl">Target</span>
-          <span class="cc-val" id="opc-target-val" style="color:var(--green)">—</span>
-          <span class="cc-sub">New high zone</span>
-        </div>
-
-        <div class="creator-card">
-          <span class="cc-lbl">Days to OPEX</span>
-          <span class="cc-val" id="opc-days-val" style="color:var(--muted2)">—</span>
-          <span class="cc-sub" id="opc-opex-date">—</span>
-        </div>
-
-      </div>
-
-      <!-- Progress bar: put wall → SPY → new high target -->
-      <div style="padding:0 16px 6px">
-        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px">
-          <span id="opc-bar-low">— wall</span>
-          <span id="opc-bar-spy-lbl" style="color:var(--blue)">SPY</span>
-          <span id="opc-bar-high">— target</span>
-        </div>
-        <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;position:relative">
-          <div id="opc-bar-fill" style="height:100%;border-radius:3px;background:linear-gradient(90deg,var(--amber),var(--green));width:0%;transition:width .6s"></div>
-          <div id="opc-bar-spy-marker" style="position:absolute;top:0;width:2px;height:100%;background:#fff;opacity:.8;transition:left .6s;left:0%"></div>
-        </div>
-      </div>
-
-      <!-- Note -->
-      <div style="padding:4px 16px 12px">
-        <span id="opc-note" style="font-size:10px;color:var(--muted2);line-height:1.4">Waiting for data...</span>
-      </div>
-
+  <div class="card">
+    <div class="card-title">📊 Performance</div>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-label">Win Rate</div><div class="stat-val" id="stat-wr" style="color:var(--muted2)">—</div></div>
+      <div class="stat-item"><div class="stat-label">Total P&amp;L</div><div class="stat-val" id="stat-pnl" style="color:var(--muted2)">—</div></div>
+      <div class="stat-item"><div class="stat-label">Trades</div><div class="stat-val" id="stat-trades" style="color:var(--white)">0</div></div>
+      <div class="stat-item"><div class="stat-label">Streak</div><div class="stat-val" id="stat-streak" style="color:var(--muted2)">—</div></div>
     </div>
-
-    <!-- Expert Vol Signals (Karsan + SpotGamma) -->
-    <div class="rp-block">
-      <div class="rp-title">🧠 Expert Vol Signals
-        <span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px">Karsan · SpotGamma</span>
+    <div style="margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)">
+        <span id="bal-display">Balance $21.64</span>
+        <span id="goal-pct-display">0.2% of $10k</span>
       </div>
-      <div class="creator-grid" style="grid-template-columns:1fr 1fr">
-
-        <!-- Vanna Flow (Karsan) -->
-        <div class="creator-card">
-          <span class="cc-lbl">Vanna Flow · Karsan</span>
-          <span class="cc-val" id="exp-vanna-val" style="color:var(--blue)">—</span>
-          <span class="cc-sub" id="exp-vanna-sub">VIX Δ → dealer bid/sell</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-vanna-bar" style="width:50%;background:var(--blue)"></div></div>
-        </div>
-
-        <!-- Implied Skew (Karsan) -->
-        <div class="creator-card">
-          <span class="cc-lbl">Put Skew · Karsan</span>
-          <span class="cc-val" id="exp-skew-val" style="color:var(--amber)">—</span>
-          <span class="cc-sub" id="exp-skew-sub">Put IV / Call IV ratio</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-skew-bar" style="width:50%;background:var(--amber)"></div></div>
-        </div>
-
-        <!-- Flow Premium Ratio (SpotGamma) -->
-        <div class="creator-card">
-          <span class="cc-lbl">$ Flow · SpotGamma</span>
-          <span class="cc-val" id="exp-flow-val" style="color:var(--green)">—</span>
-          <span class="cc-sub" id="exp-flow-sub">Call $ vs Put $ flow</span>
-          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-flow-bar" style="width:50%;background:var(--green)"></div></div>
-        </div>
-
-        <!-- AGS Pin Magnet (SpotGamma) -->
-        <div class="creator-card">
-          <span class="cc-lbl">AGS Pin · SpotGamma</span>
-          <span class="cc-val" id="exp-ags-val" style="color:var(--amber)">—</span>
-          <span class="cc-sub">Absolute Gamma Strike</span>
-        </div>
-
-      </div>
+      <div class="goal-bar-bg"><div class="goal-bar-fill" id="goal-bar2" style="width:0.2%"></div></div>
     </div>
+  </div>
 
-    <!-- Today's Forecast -->
-    <div class="rp-block">
-      <div class="sec-hdr">
-        <span class="sec-title">🔮 Forecast</span>
-        <span class="sec-meta" id="forecast-session">—</span>
-      </div>
-      <div class="rp-body">
-        <div class="kv">
-          <span class="kv-lbl">$735 King Node</span>
-          <span class="kv-val" style="color:var(--amber)">⚡ Magnet</span>
-        </div>
-        <div style="margin:10px 0;font-size:11px;line-height:1.8">
-          <div><span style="color:var(--green);font-weight:bold">▲ Above $735</span>
-            <span style="color:var(--muted2)"> → call squeeze → </span>
-            <span style="color:var(--green);font-weight:bold">CALL</span></div>
-          <div><span style="color:var(--red);font-weight:bold">▼ Below $735</span>
-            <span style="color:var(--muted2)"> → gamma amplifies → </span>
-            <span style="color:var(--red);font-weight:bold">PUT</span></div>
-        </div>
-        <div class="kv">
-          <span class="kv-lbl">VIX Regime</span>
-          <span class="kv-val" id="forecast-vix-regime" style="color:var(--amber)">Elevated (19.49)</span>
-        </div>
-        <div class="kv">
-          <span class="kv-lbl">Entry Window</span>
-          <span class="kv-val" style="color:var(--muted2)">9:45 AM – 12:30 PM ET</span>
-        </div>
-        <div style="margin-top:10px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px;font-size:10px;color:var(--muted2);line-height:1.6">
-          VIX &lt; 28 → bot gates OPEN<br>
-          <span style="color:var(--amber)">Watch first 15 min bar for direction confirm</span>
-        </div>
-      </div>
-    </div>
+  <div class="card">
+    <div class="card-title">🤖 Bot Status</div>
+    <div style="color:var(--muted2);font-size:12px;line-height:1.6" id="last-action">Connecting...</div>
+    <div style="margin-top:8px;font-size:10px;color:var(--muted)">Updated: <span id="market-ts">—</span></div>
+  </div>
 
-    <!-- Bot Intelligence / Stats -->
-    <div class="rp-block">
-      <div class="sec-hdr">
-        <span class="sec-title">🧠 Performance</span>
-        <span class="sec-meta">last 20 trades</span>
-      </div>
-      <div class="rp-body">
+  <div class="card">
+    <div class="card-title">📉 Vol Surface</div>
+    <table class="vol-table" style="width:100%;border-collapse:collapse;">
+      <tr><td style="color:var(--muted)">VIX Spot</td><td id="vs-vix">—</td></tr>
+      <tr><td style="color:var(--muted)">VIX3M (est)</td><td id="vs-vix3m">—</td></tr>
+      <tr><td style="color:var(--muted)">TS Slope</td><td id="vs-slope">—</td></tr>
+      <tr><td style="color:var(--muted)">Structure</td><td id="vs-label">—</td></tr>
+      <tr><td style="color:var(--muted)">Vanna</td><td id="vs-vanna">—</td></tr>
+      <tr><td style="color:var(--muted)">Regime Gate</td><td id="vs-gate">—</td></tr>
+    </table>
+  </div>
 
-        <div class="stats-row" style="margin-bottom:14px">
-          <div class="stat-cell">
-            <div class="stat-num {% if stats.win_rate > 0.55 %}j-win{% elif stats.win_rate > 0.4 %}{% else %}j-loss{% endif %}"
-              id="stat-wr"
-              style="color:{% if stats.win_rate > 0.55 %}var(--green){% elif stats.win_rate > 0.4 %}var(--amber){% else %}var(--red){% endif %}">
-              {{ "{:.0f}%".format(stats.win_rate*100) }}
-            </div>
-            <div class="stat-lbl">Win Rate</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num" id="stat-pnl"
-              style="color:{% if stats.total_pnl_usd >= 0 %}var(--green){% else %}var(--red){% endif %}">
-              {{ "${:+.2f}".format(stats.total_pnl_usd) }}
-            </div>
-            <div class="stat-lbl">Total P&L</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num" id="stat-kelly" style="color:var(--amber)">{{ "{:.0f}%".format(stats.kelly*100) }}</div>
-            <div class="stat-lbl">Kelly Size</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num" id="stat-trades" style="color:var(--white)">{{ stats.total_trades }}</div>
-            <div class="stat-lbl">Trades</div>
-          </div>
-        </div>
+  <div class="card">
+    <div class="card-title">📋 Recent Trades</div>
+    <table class="journal-table">
+      <thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>P&amp;L%</th><th>P&amp;L$</th></tr></thead>
+      <tbody id="journal-body"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px">No trades yet</td></tr></tbody>
+    </table>
+  </div>
 
-        <!-- Goal progress -->
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Goal $10,000</span>
-            <div>
-              <span id="balance-display" style="color:var(--green);font-weight:bold">${{ "{:.2f}".format(stats.balance) }}</span>
-              <span style="color:var(--muted);font-size:10px"> / $10,000</span>
-            </div>
-          </div>
-          <div class="goal-bar-wrap">
-            <div class="goal-bar-fill" id="goal-bar" style="width:{{ [stats.goal_progress_pct,100]|min }}%"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:4px">
-            <span style="color:var(--green);font-size:9px" id="goal-pct">{{ "{:.2f}%".format(stats.goal_progress_pct) }}</span>
-            <span style="color:var(--muted);font-size:9px">${{ "{:,.0f}".format(10000 - stats.balance) }} to go</span>
-          </div>
-        </div>
-
-        <div style="margin-top:12px">
-          <div class="kv">
-            <span class="kv-lbl">Streak</span>
-            <span class="kv-val" id="streak-val">
-              {% if stats.streak_type %}<span style="color:{% if stats.streak_type=='win' %}var(--green){% else %}var(--red){% endif %}">{{ stats.streak }}× {{ stats.streak_type.upper() }}</span>
-              {% else %}—{% endif %}
-            </span>
-          </div>
-          <div class="kv">
-            <span class="kv-lbl">Avg Win / Loss</span>
-            <span class="kv-val">
-              <span id="avg-win" style="color:var(--green)">+{{ "{:.0f}%".format(stats.avg_win_pct) }}</span>
-              <span style="color:var(--muted)"> / </span>
-              <span id="avg-loss" style="color:var(--red)">−{{ "{:.0f}%".format(stats.avg_loss_pct) }}</span>
-            </span>
-          </div>
-        </div>
-
-        {% if patterns %}
-        <div style="margin-top:14px">
-          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">GEX Patterns</div>
-          {% for p in patterns[:4] %}
-          <div class="pat-row">
-            <span style="color:var(--muted2)">{{ p.pattern }}</span>
-            <span class="pat-badge" style="background:{% if p.win_rate>0.55 %}var(--green-dim){% else %}var(--red-dim){% endif %};color:{% if p.win_rate>0.55 %}var(--green){% else %}var(--red){% endif %}">
-              {{ "{:.0f}%".format(p.win_rate*100) }} (n={{ p.n }})
-            </span>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-      </div>
-    </div>
-
-    <!-- Trade Journal -->
-    <div class="rp-block">
-      <div class="sec-hdr">
-        <span class="sec-title">📒 Journal</span>
-        <span class="sec-meta" id="journal-count">{{ trades|length }} trades</span>
-      </div>
-      <div id="journal-body">
-        {% if not trades %}
-        <div class="empty-state">
-          <div class="empty-icon">📭</div>
-          No trades yet<br>
-          <span style="font-size:10px">Bot scans every 15 min from 9:45 AM ET</span>
-        </div>
-        {% else %}
-        <table class="journal">
-          <thead>
-            <tr><th>Date</th><th>Type</th><th>Strike</th><th>P&L%</th><th>P&L$</th></tr>
-          </thead>
-          <tbody>
-            {% for t in trades|reverse %}
-            <tr>
-              <td style="color:var(--muted2)">{{ t.date }}</td>
-              <td>{% if t.opt_type=="call" %}<span style="color:var(--green);font-weight:bold">CALL</span>
-                  {% else %}<span style="color:var(--red);font-weight:bold">PUT</span>{% endif %}</td>
-              <td style="color:var(--white)">${{ t.strike }}</td>
-              <td>{% if t.pnl_pct is not none %}
-                    <span class="{% if t.pnl_pct>0 %}j-win{% else %}j-loss{% endif %}">{{ "{:+.0f}%".format(t.pnl_pct) }}</span>
-                  {% elif not t.exit_price %}<span class="j-open">OPEN</span>
-                  {% else %}<span style="color:var(--muted)">—</span>{% endif %}</td>
-              <td>{% if t.pnl_usd is not none %}
-                    <span class="{% if t.pnl_usd>0 %}j-win{% else %}j-loss{% endif %}">${{ "{:+.2f}".format(t.pnl_usd) }}</span>
-                  {% else %}<span style="color:var(--muted)">—</span>{% endif %}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
-      </div>
-    </div>
-
-  </div><!-- /col-right -->
-</div><!-- /main -->
+</div>
+</div>
 
 <script>
-// ── Clock ──────────────────────────────────────────────────────────────────────
+// Clock
 function updateClock(){
   const et=new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
-  document.getElementById("clock").textContent=
-    [et.getHours(),et.getMinutes(),et.getSeconds()].map(n=>String(n).padStart(2,"0")).join(":")+' ET';
+  setText("clock",[et.getHours(),et.getMinutes(),et.getSeconds()].map(n=>String(n).padStart(2,"0")).join(":")+' ET');
 }
 setInterval(updateClock,1000); updateClock();
 
-// ── GEX Ladder renderer ───────────────────────────────────────────────────────
-function renderLadder(ladder, gex){
-  const body = document.getElementById("ladder-body");
-  if(!body) return;
-  if(!ladder || !ladder.length){
-    body.innerHTML='<tr><td colspan="6" class="empty-state" style="padding:24px;text-align:center;color:var(--muted)">Ladder populates when market opens</td></tr>';
-    return;
-  }
-
-  const king  = gex.king_strike;
-  const flip  = gex.gamma_flip;
-  const spot  = gex.spot;
-  const cwall = gex.call_wall;
-  const pwall = gex.put_wall;
-  const ags   = gex.ags;
-
-  // Scale bar: find max abs net GEX for normalisation
-  const maxAbs = Math.max(...ladder.map(r => Math.abs(r.net_gex_m)), 0.001);
-
-  // Sort descending (highest strike at top) so SPY price is intuitive
-  const rows = [...ladder].sort((a,b) => b.strike - a.strike);
-
-  body.innerHTML = rows.map(r => {
-    const s = r.strike;
-    let rowClass = "";
-    let strikeTags = "";
-
-    if(king && Math.abs(s - king) < 0.5){ rowClass="row-king"; strikeTags+='<span class="row-tag tag-king">KING</span>'; }
-    if(flip && Math.abs(s - flip) < 0.5){ rowClass="row-flip"; strikeTags+='<span class="row-tag tag-flip">FLIP</span>'; }
-    if(spot && Math.abs(s - spot) < 0.5){ rowClass="row-spot"; strikeTags+='<span class="row-tag tag-spot">NOW</span>'; }
-    if(cwall && Math.abs(s - cwall) < 0.5){ rowClass=rowClass||"row-cwall"; strikeTags+='<span class="row-tag tag-cwall">CW</span>'; }
-    if(pwall && Math.abs(s - pwall) < 0.5){ rowClass=rowClass||"row-pwall"; strikeTags+='<span class="row-tag tag-pwall">PW</span>'; }
-    if(ags   && Math.abs(s - ags)   < 0.5){ strikeTags+='<span class="row-tag" style="background:var(--amber);color:#000">AGS</span>'; }
-
-    // GEX bar
-    const pct = Math.min(Math.abs(r.net_gex_m) / maxAbs * 50, 50);
-    const barHtml = r.net_gex_m >= 0
-      ? `<div class="gex-bar-fill-call" style="width:${pct}%"></div>`
-      : `<div class="gex-bar-fill-put"  style="width:${pct}%"></div>`;
-
-    const callGex  = r.call_gex_m  ? `<span class="call-val">${r.call_gex_m>0?"+":""}${r.call_gex_m.toFixed(1)}M</span>`  : '<span class="muted-val">—</span>';
-    const putGex   = r.put_gex_m   ? `<span class="put-val">${r.put_gex_m.toFixed(1)}M</span>`   : '<span class="muted-val">—</span>';
-    const callOI   = r.call_oi     ? `<span class="call-val">${r.call_oi.toLocaleString()}</span>` : '<span class="muted-val">—</span>';
-    const putOI    = r.put_oi      ? `<span class="put-val">${r.put_oi.toLocaleString()}</span>`   : '<span class="muted-val">—</span>';
-
-    return `<tr class="${rowClass}">
-      <td>${callOI}</td>
-      <td>${callGex}</td>
-      <td class="td-strike">$${s.toFixed(0)}${strikeTags}</td>
-      <td class="td-bar">
-        <div class="gex-bar-cell">${barHtml}<div class="gex-bar-center"></div></div>
-      </td>
-      <td style="text-align:left">${putGex}</td>
-      <td style="text-align:left">${putOI}</td>
-    </tr>`;
-  }).join("");
-}
-
-// ── Options Flow renderer ─────────────────────────────────────────────────────
-function renderFlow(gex){
-  const feed      = gex.flow_feed      || [];
-  const callTotal = gex.call_vol_total || 0;
-  const putTotal  = gex.put_vol_total  || 0;
-  const ratio     = gex.flow_ratio     != null ? gex.flow_ratio : 0.5;
-
-  const callPct = Math.round(ratio * 100);
-  const putPct  = 100 - callPct;
-
-  const cb = document.getElementById("flow-call-bar");
-  const pb = document.getElementById("flow-put-bar");
-  if(cb){ cb.style.width = callPct + "%"; cb.textContent = callPct > 12 ? callPct + "%" : ""; }
-  if(pb){ pb.style.width = putPct  + "%"; pb.textContent = putPct  > 12 ? putPct  + "%" : ""; }
-
-  setText("call-vol-total", callTotal.toLocaleString());
-  setText("put-vol-total",  putTotal.toLocaleString());
-
-  const bias  = callPct > 55 ? "📈 CALL HEAVY" : callPct < 45 ? "📉 PUT HEAVY" : "⚖ NEUTRAL";
-  const biasc = callPct > 55 ? "var(--green)"  : callPct < 45 ? "var(--red)"   : "var(--amber)";
-  setHtml("flow-ratio-label", `<span style="color:${biasc}">${bias}</span>`);
-
-  const body = document.getElementById("flow-feed-body");
-  if(!body) return;
-  if(!feed.length){
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Flow data populates when market opens</td></tr>';
-    return;
-  }
-  body.innerHTML = feed.map((f,i) => {
-    const isCall  = f.type === "CALL";
-    const typeHtml = isCall
-      ? '<span class="flow-call">▲ CALL</span>'
-      : '<span class="flow-put">▼ PUT</span>';
-    const biasHtml = isCall
-      ? '<span class="flow-call">Bullish</span>'
-      : '<span class="flow-put">Bearish</span>';
-    const rank = i === 0 ? ' style="color:var(--amber)"' : '';
-    return `<tr>
-      <td style="color:var(--white)">$${f.strike.toFixed(0)}</td>
-      <td>${typeHtml}</td>
-      <td style="color:var(--muted2)">${f.vol.toLocaleString()}</td>
-      <td${rank} style="font-weight:bold">$${f.prem_k.toFixed(1)}K</td>
-      <td>${biasHtml}</td>
-    </tr>`;
-  }).join("");
-}
-
-// ── Expert Vol Signals renderer ───────────────────────────────────────────────
-function renderExpertSignals(g){
-  // Vanna flow (Karsan)
-  if(g.vanna_label){
-    const vmap = {
-      "strong_vanna_bid":  {c:"var(--green)", w:85, label:"Strong Bid"},
-      "vanna_bid":         {c:"var(--green)", w:65, label:"Bid"},
-      "neutral":           {c:"var(--muted2)", w:50, label:"Neutral"},
-      "vanna_headwind":    {c:"var(--amber)", w:35, label:"Headwind"},
-      "vanna_sell":        {c:"var(--red)", w:15, label:"Sell"},
-    };
-    const v = vmap[g.vanna_label] || {c:"var(--muted2)", w:50, label:g.vanna_label};
-    const vannaEl = document.getElementById("exp-vanna-val");
-    if(vannaEl){ vannaEl.textContent = v.label; vannaEl.style.color = v.c; }
-    const vannaMult = g.vanna_mult != null ? (g.vanna_mult >= 1 ? "+" : "") + ((g.vanna_mult - 1)*100).toFixed(0) + "% size" : "";
-    setText("exp-vanna-sub", vannaMult || "VIX Δ → dealer bid/sell");
-    const vb = document.getElementById("exp-vanna-bar");
-    if(vb){ vb.style.width = v.w + "%"; vb.style.background = v.c; }
-  }
-
-  // Skew signal (Karsan)
-  if(g.skew_label){
-    const smap = {
-      "extreme_put_skew":  {c:"var(--red)", w:90, label:"Extreme Fear"},
-      "heavy_put_skew":    {c:"var(--amber)", w:70, label:"Heavy Skew"},
-      "elevated_put_skew": {c:"var(--amber)", w:60, label:"Elevated"},
-      "normal":            {c:"var(--muted2)", w:50, label:"Normal"},
-      "call_skew":         {c:"var(--green)", w:30, label:"Call Skew"},
-    };
-    const s = smap[g.skew_label] || {c:"var(--muted2)", w:50, label:g.skew_label};
-    const skewEl = document.getElementById("exp-skew-val");
-    if(skewEl){ skewEl.textContent = s.label; skewEl.style.color = s.c; }
-    const skewRatio = g.skew_ratio != null ? "P/C IV: " + g.skew_ratio.toFixed(2) : "Put IV / Call IV ratio";
-    setText("exp-skew-sub", skewRatio);
-    const sb = document.getElementById("exp-skew-bar");
-    if(sb){ sb.style.width = s.w + "%"; sb.style.background = s.c; }
-  }
-
-  // Flow premium ratio (SpotGamma)
-  if(g.flow_label){
-    const fmap = {
-      "call_dominant":  {c:"var(--green)", w:80, label:"Call Dominant"},
-      "call_leaning":   {c:"var(--green)", w:60, label:"Call Leaning"},
-      "neutral":        {c:"var(--muted2)", w:50, label:"Neutral"},
-      "put_leaning":    {c:"var(--amber)", w:40, label:"Put Leaning"},
-      "put_dominant":   {c:"var(--red)", w:20, label:"Put Dominant"},
-    };
-    const f = fmap[g.flow_label] || {c:"var(--muted2)", w:50, label:g.flow_label};
-    const flowEl = document.getElementById("exp-flow-val");
-    if(flowEl){ flowEl.textContent = f.label; flowEl.style.color = f.c; }
-    const flowRatio = g.flow_ratio != null ? "Call $: " + Math.round(g.flow_ratio * 100) + "%" : "Call $ vs Put $ flow";
-    setText("exp-flow-sub", flowRatio);
-    const fb = document.getElementById("exp-flow-bar");
-    if(fb){ fb.style.width = f.w + "%"; fb.style.background = f.c; }
-  }
-
-  // AGS pin magnet (SpotGamma)
-  if(g.ags != null){
-    setText("exp-ags-val", "$" + Math.round(g.ags));
-  }
-}
-
-// ── AJAX poll every 60s ───────────────────────────────────────────────────────
-let countdown = 60;
+// Countdown
+let cd=3; // fetch quickly on first load
 setInterval(()=>{
-  countdown--;
-  const el = document.getElementById("refresh-cd");
-  if(el) el.textContent = countdown > 0 ? `↻ ${countdown}s` : "↻ …";
-  if(countdown <= 0){ fetchState(); countdown = 60; }
-}, 1000);
+  cd--;
+  const el=document.getElementById("cd");
+  if(el) el.textContent=cd>0?`↻ ${cd}s`:"↻ …";
+  if(cd<=0){ fetchState(); cd=60; }
+},1000);
 
+// Signal logic
+function computeSignal(g){
+  if(!g.vix||g.vix>=30) return "flat";
+  if((g.ts_label||"contango")==="backwardation") return "flat";
+  const v=g.vanna_label||"neutral";
+  if(["strong_vanna_bid","vanna_bid","neutral"].includes(v)) return "call";
+  if(["vanna_sell","vanna_headwind"].includes(v)) return "put";
+  return "flat";
+}
+
+// Helpers
+function setText(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
+function setCol(id,c){const el=document.getElementById(id);if(el)el.style.color=c;}
+function setBar(id,pct,color){
+  const el=document.getElementById(id);
+  if(el){el.style.width=Math.min(Math.max(pct,0),100)+"%";if(color)el.style.background=color;}
+}
+
+// Main fetch
 async function fetchState(){
   try{
-    const r = await fetch("/api/state");
+    const r=await fetch("/api/state");
     if(!r.ok) throw new Error(r.status);
-    const d = await r.json();
-    const g = d.gex || {}, s = d.stats || {};
+    const d=await r.json();
+    const g=d.gex||{}, s=d.stats||{};
 
-    // Connection pill
-    document.getElementById("conn-pill").className = "pill-live";
-    document.getElementById("conn-pill").innerHTML = '<span class="dot-pulse"></span>LIVE';
+    // Pill
+    const pill=document.getElementById("conn-pill");
+    if(pill){pill.className="pill pill-live";pill.innerHTML='<span class="dot-pulse"></span>LIVE';}
 
-    // Top bar
-    if(g.spot){
-      setText("hdr-spy", "$"+g.spot.toFixed(2));
-      setText("lv-spot", "$"+g.spot.toFixed(2));
-      if(g.prev_close) setText("lv-spot-sub","vs prev $"+g.prev_close.toFixed(2));
+    // Header
+    if(g.spot){setText("hdr-spy","$"+Number(g.spot).toFixed(2));}
+    if(g.vix){
+      const vc=g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
+      setText("hdr-vix",Number(g.vix).toFixed(2)); setCol("hdr-vix",vc);
+    }
+    if(s.balance) setText("hdr-bal","$"+Number(s.balance).toFixed(2));
+
+    // VIX Regime card
+    if(g.vix){
+      const vix=Number(g.vix);
+      const vc=vix<18?"var(--green)":vix<25?"var(--amber)":"var(--red)";
+      const lbl=vix<13?"Ultra-Low":vix<18?"Normal / Bull":vix<25?"Elevated — Caution":vix<35?"High Vol / Fear":"CRISIS";
+      setText("vix-val",vix.toFixed(2)); setCol("vix-val",vc);
+      setText("vix-regime-lbl",lbl+(vix<30?" · Gates ✅":" · BLOCKED ❌"));
+      setCol("vix-regime-lbl",vix<30?"var(--green)":"var(--red)");
+      setBar("vix-bar",Math.min(vix/35*100,100),vc);
+    }
+
+    // Term Structure card
+    if(g.ts_label){
+      const m={deep_contango:["DEEP CONTANGO","var(--green)",90],contango:["CONTANGO","var(--blue)",65],backwardation:["BACKWARDATION ⛔","var(--red)",10]};
+      const [lbl,clr,pct]=m[g.ts_label]||["—","var(--muted)",50];
+      setText("ts-val",lbl); setCol("ts-val",clr);
+      setText("ts-sub",g.ts_slope!=null?"Slope: "+(g.ts_slope*100).toFixed(1)+"%":"—");
+      setBar("ts-bar",pct,clr);
+    }
+
+    // Vanna Flow card
+    if(g.vanna_label){
+      const m={
+        strong_vanna_bid:["STRONG BID ▲","var(--green)",95],
+        vanna_bid:["VANNA BID ▲","#88ffcc",75],
+        neutral:["NEUTRAL —","var(--muted2)",50],
+        vanna_headwind:["HEADWIND ▼","var(--amber)",28],
+        vanna_sell:["VANNA SELL ▼","var(--red)",8],
+      };
+      const [lbl,clr,pct]=m[g.vanna_label]||["—","var(--muted)",50];
+      setText("vanna-val",lbl); setCol("vanna-val",clr);
+      setText("vanna-sub","Mult: ×"+(g.vanna_mult||1).toFixed(2));
+      setBar("vanna-bar",pct,clr);
+    }
+
+    // VIX3M card
+    if(g.vix3m){
+      setText("vix3m-val",Number(g.vix3m).toFixed(2)); setCol("vix3m-val","var(--blue)");
+      if(g.ts_slope!=null){
+        const sl=g.ts_slope;
+        setText("slope-sub","Slope "+(sl>=0?"+":"")+(sl*100).toFixed(1)+"%");
+        setBar("slope-bar",Math.min(Math.max((sl+0.05)*600,0),100),sl>0?"var(--blue)":"var(--red)");
+      }
+    }
+
+    // Account card
+    if(s.balance!=null){
+      const b=Number(s.balance);
+      const gp=s.goal_pct||0;
+      setText("bal-val","$"+b.toFixed(2)); setCol("bal-val","var(--white)");
+      setText("goal-sub",gp.toFixed(1)+"% of $10,000 goal");
+      setBar("goal-bar",gp,"var(--blue)");
+      setText("bal-display","Balance $"+b.toFixed(2));
+      setText("goal-pct-display",gp.toFixed(1)+"% of $10k");
+      setBar("goal-bar2",Math.min(gp,100),null);
+    }
+
+    // Signal card + banner
+    const sig=computeSignal(g);
+    const sm={
+      call:["LONG CALL ▲","var(--green)",100,"▲ CALL","badge-call","call","📈"],
+      put: ["LONG PUT ▼","var(--red)",100,"▼ PUT","badge-put","put","📉"],
+      flat:["FLAT","var(--muted)",0,"— FLAT","badge-flat","","⚡"],
+    };
+    const [sv,sc,bp,bbt,bbc,bc,bi]=sm[sig];
+    setText("sig-val",sv); setCol("sig-val",sc);
+    setText("sig-sub",sig==="flat"?"Waiting for alignment":"All gates green ✅");
+    setBar("sig-bar",bp,sc);
+    setText("hdr-sig",bbt); setCol("hdr-sig",sc);
+    const ban=document.getElementById("banner");
+    if(ban) ban.className="banner "+(bc||"");
+    setText("banner-icon",bi);
+    setText("banner-action",g.last_action||"—");
+    const bb=document.getElementById("banner-badge");
+    if(bb){bb.textContent=bbt;bb.className="banner-badge "+bbc;}
+    const cs=document.getElementById("card-sig");
+    if(cs) cs.className="sig-card"+(sig==="call"?" active-call":sig==="put"?" active-put":"");
+
+    // Bot status + timestamps
+    setText("last-action",g.last_action||"—");
+    if(g.last_updated) setText("market-ts",String(g.last_updated).slice(11,19)+" ET");
+
+    // Vol surface sidebar
+    if(g.vix)   setText("vs-vix",Number(g.vix).toFixed(2));
+    if(g.vix3m) setText("vs-vix3m",Number(g.vix3m).toFixed(2)+" (est)");
+    if(g.ts_slope!=null) setText("vs-slope",(g.ts_slope*100).toFixed(1)+"%");
+    if(g.ts_label){
+      const tc={deep_contango:"var(--green)",contango:"var(--blue)",backwardation:"var(--red)"};
+      setText("vs-label",(g.ts_label||"").replace(/_/g," ").toUpperCase());
+      setCol("vs-label",tc[g.ts_label]||"var(--muted2)");
+    }
+    if(g.vanna_label){
+      const vc2={strong_vanna_bid:"var(--green)",vanna_bid:"#88ffcc",neutral:"var(--muted2)",vanna_headwind:"var(--amber)",vanna_sell:"var(--red)"};
+      setText("vs-vanna",(g.vanna_label||"").replace(/_/g," "));
+      setCol("vs-vanna",vc2[g.vanna_label]||"var(--muted2)");
     }
     if(g.vix){
-      const vc = g.vix<18?"var(--green)":g.vix<25?"var(--amber)":"var(--red)";
-      const el = document.getElementById("hdr-vix");
-      if(el){ el.textContent = g.vix.toFixed(2); el.style.color = vc; }
-      // VIX regime for forecast
-      const regime = g.vix<13?"Ultra-Low":g.vix<18?"Normal/Bull":g.vix<25?"Elevated — Caution":g.vix<35?"High Vol/Fear":"CRISIS";
-      setHtml("forecast-vix-regime", `<span style="color:${vc}">${regime} (${g.vix.toFixed(2)})</span>`);
-    }
-    if(g.direction){
-      const labels = {call:"▲ CALL",put:"▼ PUT"};
-      const colors = {call:"var(--green)",put:"var(--red)"};
-      const el = document.getElementById("hdr-signal");
-      if(el){ el.textContent = labels[g.direction]||"SCAN"; el.style.color = colors[g.direction]||"var(--muted2)"; }
-    }
-    if(g.king_strike) setText("hdr-king", "$"+Math.round(g.king_strike));
-
-    // Key level bar
-    if(g.call_wall){ setText("lv-cwall","$"+Math.round(g.call_wall)); }
-    if(g.put_wall) { setText("lv-pwall","$"+Math.round(g.put_wall));  }
-    if(g.gamma_flip){ setText("lv-flip","$"+Math.round(g.gamma_flip)); }
-    if(g.king_strike){
-      setText("lv-king","$"+Math.round(g.king_strike));
-      if(g.king_gex_m) setText("lv-king-sub",(g.king_gex_m>0?"+":"")+Number(g.king_gex_m).toFixed(1)+"M");
+      setText("vs-gate",g.vix<30?"✅ Open":"❌ Blocked");
+      setCol("vs-gate",g.vix<30?"var(--green)":"var(--red)");
     }
 
-    // Signal banner
-    const sb = document.getElementById("signal-banner");
-    if(sb){
-      sb.className = "signal-banner" + (g.direction==="call"?" call-active":g.direction==="put"?" put-active":"");
-      if(g.last_action) setText("sig-text", g.last_action);
-      const badge = document.getElementById("sig-badge");
-      if(badge){
-        badge.textContent = g.direction==="call"?"▲ CALL":g.direction==="put"?"▼ PUT":"— FLAT";
-        badge.className = "sig-badge "+(g.direction==="call"?"sig-call":g.direction==="put"?"sig-put":"sig-flat");
-      }
-    }
-
-    // Confidence
-    const conf = (g.confidence||0)*100;
-    const cc   = conf>60?"var(--green)":conf>40?"var(--amber)":"var(--red)";
-    const cf   = document.getElementById("conf-fill");
-    if(cf){ cf.style.width=conf.toFixed(0)+"%"; cf.style.background=cc; }
-    const cp   = document.getElementById("conf-pct");
-    if(cp){ cp.textContent=conf.toFixed(0)+"%"; cp.style.color=cc; }
-
-    // Bot analysis panel
-    if(g.regime_ok!=null){
-      setHtml("regime-val", g.regime_ok
-        ?'<span style="color:var(--green)">✅ Confirmed</span>'
-        :'<span style="color:var(--amber)">⚠️ Misaligned</span>');
-    }
-    if(g.ivr!=null){
-      const ic = g.ivr<30?"var(--green)":g.ivr<50?"var(--amber)":"var(--red)";
-      const label = g.ivr<30?" (cheap)":g.ivr<50?" (fair)":" (rich)";
-      setHtml("ivr-val",`<span style="color:${ic}">${g.ivr}${label}</span>`);
-    }
-    if(g.last_updated){ setText("scan-ts", g.last_updated.slice(11,16)+" ET"); setText("ladder-meta","Updated "+g.last_updated.slice(11,16)+" ET"); }
-    if(g.market_updated) setText("market-ts", g.market_updated);
-    if(d.next_action)   setText("next-action", d.next_action);
-
-    // Balance / stats
-    if(s.balance!=null){
-      const b = Number(s.balance).toFixed(2);
-      setText("balance-display","$"+b);
-      setText("hdr-balance","$"+b);
-    }
-    if(s.goal_progress_pct!=null){
-      setText("goal-pct", s.goal_progress_pct.toFixed(2)+"%");
-      const gb=document.getElementById("goal-bar");
-      if(gb) gb.style.width=Math.min(s.goal_progress_pct,100)+"%";
-    }
+    // Performance stats
     if(s.win_rate!=null){
-      const wr=Math.round(s.win_rate*100), wc=wr>55?"var(--green)":wr>40?"var(--amber)":"var(--red)";
-      const el=document.getElementById("stat-wr");
-      if(el){ el.textContent=wr+"%"; el.style.color=wc; }
+      const wr=Math.round(s.win_rate*100);
+      setText("stat-wr",wr+"%");
+      setCol("stat-wr",wr>55?"var(--green)":wr>40?"var(--amber)":"var(--red)");
     }
     if(s.total_pnl_usd!=null){
-      const el=document.getElementById("stat-pnl");
-      if(el){ el.textContent=(s.total_pnl_usd>=0?"$+":"$-")+Math.abs(s.total_pnl_usd).toFixed(2); el.style.color=s.total_pnl_usd>=0?"var(--green)":"var(--red)"; }
+      const v=s.total_pnl_usd;
+      setText("stat-pnl",(v>=0?"$+":"$")+Number(v).toFixed(2));
+      setCol("stat-pnl",v>=0?"var(--green)":"var(--red)");
     }
-    if(s.kelly!=null)       setText("stat-kelly",Math.round(s.kelly*100)+"%");
     if(s.total_trades!=null) setText("stat-trades",s.total_trades);
     if(s.streak_type){
-      const sc=s.streak_type==="win"?"var(--green)":"var(--red)";
-      setHtml("streak-val",`<span style="color:${sc}">${s.streak}× ${s.streak_type.toUpperCase()}</span>`);
+      setText("stat-streak",s.streak+"× "+s.streak_type.toUpperCase());
+      setCol("stat-streak",s.streak_type==="win"?"var(--green)":"var(--red)");
     }
-    if(s.avg_win_pct!=null)  setText("avg-win","+"+Math.round(s.avg_win_pct)+"%");
-    if(s.avg_loss_pct!=null) setText("avg-loss","−"+Math.round(s.avg_loss_pct)+"%");
-
-    // Session label
-    const sessionLabels={open:"🟢 Market Open",pre:"🟡 Pre-Market",after:"🌙 After-Hours",closed:"⛔ Closed"};
-    if(d.session) setText("forecast-session", sessionLabels[d.session]||d.session);
-
-    // ── Creator Signals ──────────────────────────────────────────────────────
-    // VRP (Whaley)
-    if(g.vrp_label != null){
-      const vrpColors = {cheap:"var(--green)", elevated:"var(--amber)", rich:"var(--red)", unknown:"var(--muted2)"};
-      const vrpLabels = {cheap:"CHEAP ✅", elevated:"ELEVATED ⚠️", rich:"RICH ❌", unknown:"—"};
-      const vrpSubs   = {cheap:"Options fairly priced → full size", elevated:"Premium elevated → watch size", rich:"IV >> RV → spend cut 50%", unknown:"—"};
-      const vrpPct    = g.vrp_spread != null ? Math.min(Math.abs(g.vrp_spread)*500, 100) : 0;
-      const vrpBarClr = g.vrp_label==="cheap"?"var(--green)":g.vrp_label==="rich"?"var(--red)":"var(--amber)";
-      const vrpEl = document.getElementById("cs-vrp-val");
-      if(vrpEl){ vrpEl.textContent = vrpLabels[g.vrp_label]||g.vrp_label; vrpEl.style.color = vrpColors[g.vrp_label]||"var(--muted2)"; }
-      const vrpSpread = g.vrp_spread != null ? (g.vrp_spread*100).toFixed(1) : "?";
-      setText("cs-vrp-sub", `Spread: ${vrpSpread > 0 ? "+" : ""}${vrpSpread}pp IV vs RV`);
-      const vrpBar = document.getElementById("cs-vrp-bar");
-      if(vrpBar){ vrpBar.style.width = vrpPct + "%"; vrpBar.style.background = vrpBarClr; }
-    }
-
-    // Term Structure (Whaley/Galai)
-    if(g.ts_label != null){
-      const tsColors = {deep_contango:"var(--green)", contango:"var(--blue)", backwardation:"var(--red)", unknown:"var(--muted2)"};
-      const tsLabels = {deep_contango:"DEEP CONTANGO ✅", contango:"CONTANGO 🔵", backwardation:"BACKWARDATION ❌", unknown:"—"};
-      const tsSubs   = {deep_contango:"Size ×1.20 boost active", contango:"Normal — no adjustment", backwardation:"BLOCKED — all entries flat", unknown:"—"};
-      const tsEl = document.getElementById("cs-ts-val");
-      if(tsEl){ tsEl.textContent = tsLabels[g.ts_label]||g.ts_label; tsEl.style.color = tsColors[g.ts_label]||"var(--muted2)"; }
-      setText("cs-ts-sub", tsSubs[g.ts_label]||"—");
-      const tsPct = g.ts_slope != null ? Math.min(Math.max((g.ts_slope + 0.05)*500, 0), 100) : 50;
-      const tsBar = document.getElementById("cs-ts-bar");
-      if(tsBar){ tsBar.style.width = tsPct + "%"; tsBar.style.background = tsColors[g.ts_label]||"var(--blue)"; }
-    }
-
-    // Jump Premium (Brenner)
-    if(g.jump_mult != null){
-      const jm = Number(g.jump_mult);
-      const jc = jm >= 0.95 ? "var(--green)" : jm >= 0.75 ? "var(--amber)" : "var(--red)";
-      const jEl = document.getElementById("cs-jump-val");
-      if(jEl){ jEl.textContent = "×" + jm.toFixed(2); jEl.style.color = jc; }
-      const jBar = document.getElementById("cs-jump-bar");
-      if(jBar){ jBar.style.width = (jm*100).toFixed(0) + "%"; jBar.style.background = jc; }
-    }
-
-    // OPEX Gravity (Galai)
-    if(g.opex_note != null){
-      const opexNote = g.opex_note || "";
-      const isBlocked = opexNote.includes("FLAT") || opexNote.includes("no calls");
-      const isBoost   = opexNote.includes("boost") || opexNote.includes("floor active");
-      const oc = isBlocked ? "var(--red)" : isBoost ? "var(--green)" : "var(--amber)";
-      const ov = isBlocked ? "BLOCKED ❌" : isBoost ? "SUPPORTED ✅" : "CAUTION ⚠️";
-      const ovEl = document.getElementById("cs-opex-val");
-      if(ovEl){ ovEl.textContent = ov; ovEl.style.color = oc; }
-      setText("cs-opex-sub", opexNote.length > 40 ? opexNote.slice(0, 40) + "…" : opexNote);
-    }
-
-    // VIX3M row
-    if(g.vix)   { const el=document.getElementById("cs-vix3m-vix");   if(el){ el.textContent=g.vix.toFixed(2); } }
-    if(g.vix3m) { const el=document.getElementById("cs-vix3m-val");   if(el){ el.textContent=g.vix3m.toFixed(2); } }
-    if(g.ts_slope != null){
-      const el=document.getElementById("cs-vix3m-slope");
-      if(el){
-        const s = g.ts_slope;
-        el.textContent = (s >= 0 ? "+" : "") + (s*100).toFixed(1) + "%";
-        el.style.color = s > 0.10 ? "var(--green)" : s < 0 ? "var(--red)" : "var(--blue)";
-      }
-    }
-
-    // ── Monthly OPEX Rubber Band Cycle ────────────────────────────────────────
-    if(g.opex_phase != null) {
-      const ph = g.opex_phase;
-      const phColors = {1:"var(--red)",2:"var(--amber)",3:"var(--blue)",4:"var(--green)"};
-      const phBg     = {1:"#2a0a0a",   2:"#2a1a00",    3:"#001a2a",   4:"#0a2a0a"};
-      [1,2,3,4].forEach(n => {
-        const el = document.getElementById("opc-ph" + n);
-        if(!el) return;
-        if(n === ph) {
-          el.style.background = phBg[n];
-          el.style.color = phColors[n];
-          el.style.fontWeight = "bold";
-        } else {
-          el.style.background = "var(--bg3)";
-          el.style.color = "var(--muted)";
-          el.style.fontWeight = "normal";
-        }
-      });
-      const phEl = document.getElementById("opc-phase-val");
-      if(phEl){ phEl.textContent = ph; phEl.style.color = phColors[ph] || "var(--amber)"; }
-      setText("opc-phase-lbl", g.opex_phase_label || "—");
-
-      // Walls & targets
-      if(g.monthly_put_wall)    { setText("opc-wall-val",   "$" + g.monthly_put_wall);   setText("opc-bar-low", "$" + g.monthly_put_wall + " wall"); }
-      if(g.monthly_call_target) { setText("opc-target-val", "$" + g.monthly_call_target); setText("opc-bar-high", "$" + g.monthly_call_target + " target"); }
-      if(g.opex_days != null)   { setText("opc-days-val", g.opex_days + "d"); }
-      if(g.monthly_opex_date)   { setText("opc-opex-date", g.monthly_opex_date.slice(5).replace("-","/")); }
-
-      // Progress bar: 0% = put wall, 100% = call target
-      const wall   = g.monthly_put_wall   || 730;
-      const target = g.monthly_call_target || 745;
-      const spy    = g.spot || wall;
-      const range  = target - wall;
-      const pct    = Math.max(0, Math.min(100, ((spy - wall) / range) * 100));
-      const fillEl = document.getElementById("opc-bar-fill");
-      const mrkEl  = document.getElementById("opc-bar-spy-marker");
-      if(fillEl)  fillEl.style.width = pct + "%";
-      if(mrkEl)   mrkEl.style.left  = pct + "%";
-      if(g.spot)  setText("opc-bar-spy-lbl", "SPY $" + g.spot.toFixed(2));
-
-      // Note
-      setText("opc-note", g.opex_cycle_note || "—");
-    }
-
-    // GEX Ladder
-    if(g.strike_ladder) renderLadder(g.strike_ladder, g);
-
-    // Options Flow
-    if(g.flow_feed !== undefined || g.flow_ratio !== undefined) renderFlow(g);
-
-    // Expert Vol Signals
-    renderExpertSignals(g);
 
     // Journal
-    if(d.journal && d.journal.length){
-      const jc=document.getElementById("journal-count");
-      if(jc) jc.textContent=d.journal.length+" recent";
+    if(d.journal&&d.journal.length){
+      const rows=d.journal.slice().reverse().map(t=>{
+        const ty=t.opt_type==="call"?'<span style="color:var(--green);font-weight:700">CALL</span>':'<span style="color:var(--red);font-weight:700">PUT</span>';
+        const pp=t.pnl_pct!=null?`<span class="${t.pnl_pct>0?"j-win":"j-loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}%</span>`:t.exit_price==null?'<span class="j-open">OPEN</span>':'—';
+        const pu=t.pnl_usd!=null?`<span class="${t.pnl_usd>0?"j-win":"j-loss"}">$${t.pnl_usd>0?"+":""}${Number(t.pnl_usd).toFixed(2)}</span>`:'—';
+        return `<tr><td style="color:var(--muted2)">${t.date||""}</td><td>${ty}</td><td>$${t.strike||""}</td><td>${pp}</td><td>${pu}</td></tr>`;
+      }).join("");
       const jb=document.getElementById("journal-body");
-      if(jb){
-        const rows=d.journal.slice().reverse().map(t=>{
-          const type=t.opt_type==="call"?'<span style="color:var(--green);font-weight:bold">CALL</span>':'<span style="color:var(--red);font-weight:bold">PUT</span>';
-          const pnlPct=t.pnl_pct!=null?`<span class="${t.pnl_pct>0?"j-win":"j-loss"}">${t.pnl_pct>0?"+":""}${Math.round(t.pnl_pct)}%</span>`:t.exit_price==null?'<span class="j-open">OPEN</span>':'<span style="color:var(--muted)">—</span>';
-          const pnlUsd=t.pnl_usd!=null?`<span class="${t.pnl_usd>0?"j-win":"j-loss"}">$${t.pnl_usd>0?"+":""}${Number(t.pnl_usd).toFixed(2)}</span>`:'<span style="color:var(--muted)">—</span>';
-          return `<tr><td style="color:var(--muted2)">${t.date||""}</td><td>${type}</td><td style="color:var(--white)">$${t.strike||""}</td><td>${pnlPct}</td><td>${pnlUsd}</td></tr>`;
-        }).join("");
-        jb.innerHTML=`<table class="journal"><thead><tr><th>Date</th><th>Type</th><th>Strike</th><th>P&L%</th><th>P&L$</th></tr></thead><tbody>${rows}</tbody></table>`;
-      }
+      if(jb) jb.innerHTML=rows;
     }
 
-  } catch(e){
+  }catch(e){
     const p=document.getElementById("conn-pill");
-    if(p){ p.className="pill-offline"; p.textContent="OFFLINE"; }
+    if(p){p.className="pill pill-offline";p.textContent="OFFLINE";}
   }
 }
 
-function setText(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
-function setHtml(id,val){const el=document.getElementById(id);if(el)el.innerHTML=val;}
-
-// Initial fetch on load
 fetchState();
 </script>
 </body>
