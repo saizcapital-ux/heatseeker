@@ -56,8 +56,16 @@ def _ticker():
                     if not tk.exists():
                         try: tk.symlink_to(sd)
                         except Exception: pass
-                    rh.login(username=u, password=p,
-                             mfa_code=os.getenv("RH_MFA_CODE") or None,
+                    mfa = None
+                    totp = os.getenv("RH_TOTP_SECRET","").strip()
+                    if totp:
+                        try:
+                            import pyotp
+                            mfa = pyotp.TOTP(totp).now()
+                        except Exception: pass
+                    if not mfa:
+                        mfa = os.getenv("RH_MFA_CODE") or None
+                    rh.login(username=u, password=p, mfa_code=mfa,
                              store_session=True, expiresIn=86400,
                              pickle_name="heatseeker")
                     logged_in = True

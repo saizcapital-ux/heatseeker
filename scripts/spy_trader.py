@@ -85,16 +85,29 @@ def check_time_window():
 def net_gex(oi, gamma, spot, is_call):
     return (1 if is_call else -1) * oi * gamma * spot * 100
 
+def _get_mfa_code():
+    """Generate MFA code from TOTP secret (permanent) or use static code (one-time)."""
+    totp_secret = os.getenv("RH_TOTP_SECRET", "").strip()
+    if totp_secret:
+        try:
+            import pyotp
+            code = pyotp.TOTP(totp_secret).now()
+            log.info(f"TOTP code generated: {code}")
+            return code
+        except ImportError:
+            log.warning("pyotp not installed — install it: pip install pyotp")
+        except Exception as e:
+            log.warning(f"TOTP generation failed: {e}")
+    # Fallback: static code from env (only valid for ~30s)
+    return os.getenv("RH_MFA_CODE", "") or None
+
 def login():
     user = os.getenv("RH_USERNAME", "")
     pwd  = os.getenv("RH_PASSWORD", "")
-    mfa  = os.getenv("RH_MFA_CODE", "")
     if not user or not pwd:
         log.error("RH_USERNAME and RH_PASSWORD must be set.")
         sys.exit(1)
-    # Persist session to a Railway Volume (mounted at /data) so it survives container restarts.
-    # Symlink ~/.tokens → /data/rh_session so robin-stocks writes directly to the volume.
-    import pickle, pathlib
+    import pathlib
     session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
     session_dir.mkdir(parents=True, exist_ok=True)
     tokens_dir = pathlib.Path.home() / ".tokens"
@@ -105,11 +118,12 @@ def login():
         tokens_dir.unlink()
         tokens_dir.symlink_to(session_dir)
         log.info(f"Updated symlink ~/.tokens → {session_dir}")
-    log.info("Logging in to Robinhood...")
+    mfa = _get_mfa_code()
+    log.info(f"Logging in to Robinhood (mfa={'yes' if mfa else 'no'})...")
     try:
         rh.login(
             username=user, password=pwd,
-            mfa_code=mfa or None,
+            mfa_code=mfa,
             store_session=True,
             expiresIn=86400,
             pickle_name="heatseeker",
