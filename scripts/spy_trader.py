@@ -154,22 +154,27 @@ def has_open_position():
         log.warning(f"Position check error: {e}")
     return False
 
+_VIX_UUID = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"  # Robinhood index UUID for VIX
+
 def get_vix():
+    # Primary: Robinhood index-instruments endpoint (correct path for index values)
+    try:
+        data = rh.helper.request_get(
+            f"https://api.robinhood.com/marketdata/index-instruments/{_VIX_UUID}/quotes/"
+        )
+        if data and data.get("value"):
+            v = round(float(data["value"]), 2)
+            log.info(f"VIX (RH index): {v:.2f}")
+            return v
+    except Exception:
+        pass
+    # Fallback: yfinance
     try:
         import yfinance as yf
         v = yf.Ticker("^VIX").fast_info.last_price
         if v and float(v) > 0:
-            log.info(f"VIX: {float(v):.2f}")
+            log.info(f"VIX (yf): {float(v):.2f}")
             return round(float(v), 2)
-    except Exception:
-        pass
-    try:
-        data = rh.stocks.get_quotes("VIX")
-        if data and data[0]:
-            v = float(data[0].get("last_trade_price", 0) or 0)
-            if v > 0:
-                log.info(f"VIX (RH): {v:.2f}")
-                return v
     except Exception:
         pass
     log.warning("VIX unavailable - defaulting to 15.0")

@@ -55,8 +55,10 @@ def _rh_login():
         _rh_logged_in = False
         return False
 
+_VIX_UUID = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"  # Robinhood index UUID for VIX
+
 def _fetch_rh_prices():
-    """Fetch SPY + VIX quotes from Robinhood. Returns (spot, vix) or Nones."""
+    """Fetch SPY + VIX via Robinhood. Returns (spot, vix) or Nones."""
     try:
         import robin_stocks.robinhood as rh
         quotes = rh.stocks.get_quotes(["SPY"], info=None)
@@ -64,10 +66,13 @@ def _fetch_rh_prices():
         raw = spy_q.get("last_trade_price") or spy_q.get("adjusted_previous_close")
         spot = round(float(raw), 2) if raw else None
 
-        vq = rh.stocks.get_quotes(["VIX"], info=None)
-        vix_q = (vq or [{}])[0] or {}
-        vraw = vix_q.get("last_trade_price") or vix_q.get("adjusted_previous_close")
-        vix_val = round(float(vraw), 2) if vraw else None
+        # VIX is an index — use index-instruments quotes endpoint, not get_quotes
+        vix_data = rh.helper.request_get(
+            f"https://api.robinhood.com/marketdata/index-instruments/{_VIX_UUID}/quotes/"
+        )
+        vix_val = None
+        if vix_data and vix_data.get("value"):
+            vix_val = round(float(vix_data["value"]), 2)
 
         return spot, vix_val
     except Exception as e:
