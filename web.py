@@ -25,34 +25,94 @@ GOAL         = 10_000.0
 _live = {}
 _live_lock = threading.Lock()
 
-def _yf_price(ticker_obj):
-    """Extract last price from yfinance Ticker using multiple fallback fields."""
-    fi = ticker_obj.fast_info
-    for attr in ("last_price", "regularMarketPrice", "previousClose"):
-        v = getattr(fi, attr, None)
-        if v:
-            return round(float(v), 2)
-    # Last resort: 1-day history
+_rh_logged_in = False
+_rh_lock = threading.Lock()
+
+def _rh_login():
+    global _rh_logged_in
+    if _rh_logged_in:
+        return True
+    u = os.getenv("RH_USERNAME", "")
+    p = os.getenv("RH_PASSWORD", "")
+    if not u or not p:
+        return False
     try:
-        h = ticker_obj.history(period="1d", interval="1m")
-        if not h.empty:
-            return round(float(h["Close"].iloc[-1]), 2)
-    except Exception:
-        pass
-    return None
+        import robin_stocks.robinhood as rh
+        rh.login(u, p, store_session=True)
+        _rh_logged_in = True
+        log.info("Web: Robinhood login OK")
+        return True
+    except Exception as e:
+        log.warning(f"Web: Robinhood login failed: {e}")
+        return False
+
+def _fetch_rh_prices():
+    """Fetch SPY + VIX quotes from Robinhood. Returns (spot, vix) or Nones."""
+    try:
+        import robin_stocks.robinhood as rh
+        quotes = rh.stocks.get_quotes(["SPY"], info=None)
+        spy_q  = (quotes or [{}])[0] or {}
+        raw = spy_q.get("last_trade_price") or spy_q.get("adjusted_previous_close")
+        spot = round(float(raw), 2) if raw else None
+
+        vq = rh.stocks.get_quotes(["VIX"], info=None)
+        vix_q = (vq or [{}])[0] or {}
+        vraw = vix_q.get("last_trade_price") or vix_q.get("adjusted_previous_close")
+        vix_val = round(float(vraw), 2) if vraw else None
+
+        return spot, vix_val
+    except Exception as e:
+        log.debug(f"RH price fetch error: {e}")
+        return None, None
+
+def _patch_gex_state(patch: dict):
+    """Merge patch into gex_state.json on disk and in-memory cache."""
+    with _live_lock:
+        _live.update(patch)
+    try:
+        try:
+            with open(GEX_STATE) as f:
+                state = json.load(f)
+        except Exception:
+            state = {}
+        state.update(patch)
+        os.makedirs(os.path.dirname(GEX_STATE), exist_ok=True)
+        with open(GEX_STATE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        log.warning(f"gex_state write error: {e}")
 
 def _fetch_live_market():
-    """Fetch SPY, VIX, VIX3M from Yahoo Finance and patch gex_state.json every 60 s."""
-    import yfinance as yf
-    spy_t  = yf.Ticker("SPY")
-    vix_t  = yf.Ticker("^VIX")
-    vix3m_t = yf.Ticker("^VIX3M")
+    """Fetch SPY + VIX every 60 s — try Robinhood first, yfinance as fallback."""
     while True:
         try:
-            spot    = _yf_price(spy_t)
-            vix_val = _yf_price(vix_t)
-            vix3m   = _yf_price(vix3m_t)
             now_str = datetime.now(ET).strftime("%H:%M:%S ET")
+            spot = vix_val = vix3m = None
+
+            # Primary: Robinhood (works on Railway, no Yahoo block)
+            if _rh_login():
+                spot, vix_val = _fetch_rh_prices()
+
+            # Fallback: yfinance (works locally, may be blocked on cloud)
+            if not spot:
+                try:
+                    import yfinance as yf
+                    fi_spy = yf.Ticker("SPY").fast_info
+                    fi_vix = yf.Ticker("^VIX").fast_info
+                    fi_v3m = yf.Ticker("^VIX3M").fast_info
+                    for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                        if not spot:
+                            v = getattr(fi_spy, attr, None)
+                            if v: spot = round(float(v), 2)
+                        if not vix_val:
+                            v = getattr(fi_vix, attr, None)
+                            if v: vix_val = round(float(v), 2)
+                        if not vix3m:
+                            v = getattr(fi_v3m, attr, None)
+                            if v: vix3m = round(float(v), 2)
+                except Exception:
+                    pass
+
             patch = {"market_updated": now_str}
             if spot:    patch["spot"]    = spot
             if vix_val: patch["vix"]     = vix_val
@@ -64,19 +124,9 @@ def _fetch_live_market():
                     patch["ts_label"] = ("deep_contango" if slope > 0.10
                                          else "contango" if slope > 0
                                          else "backwardation")
-            with _live_lock:
-                _live.update(patch)
-            # Patch gex_state.json on disk so the bot's next read is fresh
-            try:
-                with open(GEX_STATE) as f:
-                    state = json.load(f)
-            except Exception:
-                state = {}
-            state.update(patch)
-            os.makedirs(os.path.dirname(GEX_STATE), exist_ok=True)
-            with open(GEX_STATE, "w") as f:
-                json.dump(state, f, indent=2)
-            log.debug(f"Live tick: SPY={spot} VIX={vix_val} VIX3M={vix3m} @ {now_str}")
+
+            _patch_gex_state(patch)
+            log.info(f"Live tick: SPY={spot} VIX={vix_val} VIX3M={vix3m} @ {now_str}")
         except Exception as e:
             log.warning(f"Live fetch error: {e}")
         time.sleep(60)

@@ -96,26 +96,48 @@ def force_close():
         log.error(f"Force close error: {e}", exc_info=True)
 
 def refresh_market_data():
-    """Write live SPY price and VIX to gex_state.json. yfinance only — no Robinhood login."""
+    """Write live SPY + VIX to gex_state.json via Robinhood (yfinance fallback)."""
     now = datetime.now(ET)
     if now.weekday() >= 5:
         return
     t = now.hour * 60 + now.minute
     if t < 570 or t > 960:
         return
+    spot = vix = None
     try:
-        import yfinance as yf
-        spy_info = yf.Ticker("SPY").fast_info
-        vix_info = yf.Ticker("^VIX").fast_info
-        spot = getattr(spy_info, "last_price", None)
-        vix  = getattr(vix_info, "last_price", None)
-        update = {"market_updated": now.strftime("%H:%M:%S ET")}
-        if spot: update["spot"] = round(float(spot), 2)
-        if vix:  update["vix"]  = round(float(vix), 2)
-        _write_gex_update(update)
-        log.info(f"Market refresh: SPY=${spot:.2f}  VIX={vix:.2f}")
+        import robin_stocks.robinhood as rh
+        u = os.getenv("RH_USERNAME", "")
+        p = os.getenv("RH_PASSWORD", "")
+        if u and p:
+            rh.login(u, p, store_session=True)
+            quotes = rh.get_quotes(["SPY"], info=None) or [{}]
+            raw = quotes[0].get("last_trade_price") or quotes[0].get("adjusted_previous_close")
+            if raw:
+                spot = round(float(raw), 2)
     except Exception as e:
-        log.warning(f"Market refresh error: {e}")
+        log.debug(f"RH price fetch: {e}")
+    if not spot:
+        try:
+            import yfinance as yf
+            fi = yf.Ticker("SPY").fast_info
+            for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                v = getattr(fi, attr, None)
+                if v:
+                    spot = round(float(v), 2)
+                    break
+            fi2 = yf.Ticker("^VIX").fast_info
+            for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                v = getattr(fi2, attr, None)
+                if v:
+                    vix = round(float(v), 2)
+                    break
+        except Exception as e:
+            log.debug(f"yfinance fallback: {e}")
+    update = {"market_updated": now.strftime("%H:%M:%S ET")}
+    if spot: update["spot"] = spot
+    if vix:  update["vix"]  = vix
+    _write_gex_update(update)
+    log.info(f"Market refresh: SPY={spot}  VIX={vix}")
 
 def main():
     scheduler = BlockingScheduler(timezone=ET)
