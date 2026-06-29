@@ -17,6 +17,7 @@ VIX_UUID        = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
 AGENTIC_ACCOUNT = "634079917"
 
 _ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
+_tick_count = 0
 
 def _read_state():
     try:
@@ -41,6 +42,7 @@ def _write_state(patch):
 
 # ── background ticker: SPY + VIX + balance + open positions every 60s ────────
 def _ticker():
+    global _tick_count
     logged_in = False
     while True:
         try:
@@ -151,6 +153,62 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
+                # GEX computation — every 5th tick
+                _tick_count += 1
+                if _tick_count % 5 == 0:
+                    try:
+                        spot = patch.get("spot") or 580
+                        exp_today = datetime.now(ET).strftime("%Y-%m-%d")
+                        all_opts = rh.options.find_options_for_stock_by_expiration(
+                            "SPY", exp_today, optionType=None
+                        ) or []
+
+                        gex_map = {}
+                        for opt in all_opts:
+                            try:
+                                strike = round(float(opt.get("strike_price", 0)))
+                                if abs(strike - spot) > 25:
+                                    continue
+                                oi = float(opt.get("open_interest") or 0)
+                                gamma = float(opt.get("gamma") or 0)
+                                opt_type = opt.get("type", "")
+                                gex = round(oi * gamma * 100 / 1e6, 3)  # in $M
+                                if strike not in gex_map:
+                                    gex_map[strike] = {"call_gex": 0, "put_gex": 0, "call_oi": 0, "put_oi": 0}
+                                if opt_type == "call":
+                                    gex_map[strike]["call_gex"] = gex
+                                    gex_map[strike]["call_oi"] = int(oi)
+                                else:
+                                    gex_map[strike]["put_gex"] = -gex
+                                    gex_map[strike]["put_oi"] = int(oi)
+                            except Exception:
+                                continue
+
+                        if gex_map:
+                            sorted_strikes = sorted(gex_map.keys())
+                            patch["gex_by_strike"] = [{"strike": s, **gex_map[s]} for s in sorted_strikes]
+                            # Call wall: highest call OI above spot
+                            above = [s for s in sorted_strikes if s > spot]
+                            if above:
+                                patch["call_wall"] = max(above, key=lambda s: gex_map[s]["call_oi"])
+                            # Put wall: highest put OI below spot
+                            below = [s for s in sorted_strikes if s < spot]
+                            if below:
+                                patch["put_wall"] = max(below, key=lambda s: gex_map[s]["put_oi"])
+                            # Gamma flip: strike where cumulative net GEX crosses zero
+                            cumulative = 0
+                            gf = None
+                            for s in sorted_strikes:
+                                cumulative += gex_map[s]["call_gex"] + gex_map[s]["put_gex"]
+                                if cumulative > 0 and gf is None:
+                                    gf = s
+                            patch["gamma_flip"] = gf
+                            # Max pain: strike with max total OI
+                            patch["max_pain"] = max(sorted_strikes, key=lambda s: gex_map[s]["call_oi"] + gex_map[s]["put_oi"])
+                            log.info(f"GEX updated: {len(gex_map)} strikes")
+                    except Exception as ge:
+                        log.warning(f"GEX error: {ge}")
+
                 _write_state(patch)
                 _ticker_status["last_ok"] = datetime.now(ET).strftime("%H:%M:%S ET")
                 log.info(f"tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
@@ -193,8 +251,13 @@ def api_state():
         "balance":        round(float(bal), 2),
         "total_trades":   len(closed),
         "total_pnl":      round(total_pnl, 2),
-        "trades":         trades[-5:],
+        "trades":         trades[-20:],
         "open_positions": g.get("open_positions", []),
+        "gex_by_strike":  g.get("gex_by_strike", []),
+        "gamma_flip":     g.get("gamma_flip"),
+        "max_pain":       g.get("max_pain"),
+        "call_wall":      g.get("call_wall"),
+        "put_wall":       g.get("put_wall"),
         "ts":             datetime.now(ET).strftime("%H:%M:%S ET"),
         "rh_logged_in":   _ticker_status["logged_in"],
         "rh_error":       _ticker_status["last_error"],
