@@ -14,10 +14,9 @@ ET  = ZoneInfo("America/New_York")
 log = logging.getLogger("heatseeker.web")
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
-# Check volume path first, fall back to local data/ dir
-_vol_gex  = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "gex_state.json")
-_local_gex = os.path.join(DATA_DIR, "gex_state.json")
-GEX_STATE    = _vol_gex if os.path.exists(os.path.dirname(_vol_gex)) else _local_gex
+# Always use the local data/ dir — web and worker are separate Railway containers
+# and don't share /data/rh_session unless a Volume is mounted on both.
+GEX_STATE    = os.path.join(DATA_DIR, "gex_state.json")
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
 GOAL         = 10_000.0
 
@@ -35,15 +34,25 @@ def _rh_login():
     u = os.getenv("RH_USERNAME", "")
     p = os.getenv("RH_PASSWORD", "")
     if not u or not p:
+        log.warning("Web: RH_USERNAME/RH_PASSWORD not set — no live price feed")
         return False
     try:
-        import robin_stocks.robinhood as rh
-        rh.login(u, p, store_session=True)
+        import pathlib, robin_stocks.robinhood as rh
+        # Mirror the same session-pickle setup the worker uses so the token is reused
+        session_dir = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
+        session_dir.mkdir(parents=True, exist_ok=True)
+        tokens_dir = pathlib.Path.home() / ".tokens"
+        if not tokens_dir.exists():
+            tokens_dir.symlink_to(session_dir)
+        mfa = os.getenv("RH_MFA_CODE") or None
+        rh.login(username=u, password=p, mfa_code=mfa,
+                 store_session=True, expiresIn=86400, pickle_name="heatseeker")
         _rh_logged_in = True
         log.info("Web: Robinhood login OK")
         return True
     except Exception as e:
         log.warning(f"Web: Robinhood login failed: {e}")
+        _rh_logged_in = False
         return False
 
 def _fetch_rh_prices():

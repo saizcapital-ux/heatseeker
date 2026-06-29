@@ -11,9 +11,10 @@ log = logging.getLogger("heatseeker.scheduler")
 ET = pytz.timezone("America/New_York")
 
 DATA_DIR  = os.path.join(os.path.dirname(__file__), "data")
-GEX_STATE = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "gex_state.json")
+GEX_STATE = os.path.join(DATA_DIR, "gex_state.json")
 
 def _write_gex_update(update: dict):
+    os.makedirs(DATA_DIR, exist_ok=True)
     try:
         with open(GEX_STATE) as f:
             state = json.load(f)
