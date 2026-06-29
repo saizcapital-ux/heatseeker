@@ -15,9 +15,7 @@ GEX_STATE    = os.path.join(DATA_DIR, "gex_state.json")
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
 VIX_UUID     = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
 
-# ── simple in-memory cache ───────────────────────────────────────────────────
-_cache = {}
-_lock  = threading.Lock()
+_ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
 
 def _read_state():
     try:
@@ -40,7 +38,7 @@ def _write_state(patch):
     with open(GEX_STATE, "w") as f:
         json.dump(state, f, indent=2)
 
-# ── background ticker: just SPY + VIX every 60s ──────────────────────────────
+# ── background ticker: SPY + VIX + balance + open positions every 60s ────────
 def _ticker():
     logged_in = False
     while True:
@@ -57,7 +55,7 @@ def _ticker():
                         try: tk.symlink_to(sd)
                         except Exception: pass
                     mfa = None
-                    totp = os.getenv("RH_TOTP_SECRET","").strip()
+                    totp = os.getenv("RH_TOTP_SECRET", "").strip()
                     if totp:
                         try:
                             import pyotp
@@ -75,11 +73,14 @@ def _ticker():
 
             if logged_in:
                 patch = {"market_updated": datetime.now(ET).strftime("%H:%M ET")}
-                # SPY
+
+                # SPY price
                 q = rh.stocks.get_quotes(["SPY"], info=None) or [{}]
                 raw = q[0].get("last_trade_price") or q[0].get("adjusted_previous_close")
-                if raw: patch["spot"] = round(float(raw), 2)
-                # VIX via index endpoint
+                if raw:
+                    patch["spot"] = round(float(raw), 2)
+
+                # VIX via index UUID endpoint
                 vd = rh.helper.request_get(
                     f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/"
                 )
@@ -90,24 +91,74 @@ def _ticker():
                     slope = round((patch["vix3m"] - vix) / vix, 4)
                     patch["ts_slope"] = slope
                     patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
-                # balance
+
+                # Balance — try multiple endpoints
                 try:
-                    ph = rh.account.load_phoenix_account() or {}
-                    bal = float((ph.get("account_buying_power") or {}).get("amount", 0) or 0)
+                    port = rh.profiles.load_portfolio_profile() or {}
+                    bal = float(port.get("withdrawable_amount") or port.get("excess_margin") or 0)
                     if not bal:
-                        port = rh.account.load_portfolio_profile() or {}
-                        bal = float(port.get("withdrawable_amount") or port.get("excess_margin") or 0)
-                    if bal: patch["balance"] = round(bal, 2)
-                except Exception: pass
+                        acc = rh.profiles.load_account_profile() or {}
+                        bal = float(acc.get("cash") or acc.get("buying_power") or 0)
+                    if not bal:
+                        ph = rh.account.load_phoenix_account() or {}
+                        bal = float((ph.get("account_buying_power") or {}).get("amount", 0) or 0)
+                    if bal:
+                        patch["balance"] = round(bal, 2)
+                        log.info(f"balance={bal}")
+                except Exception as be:
+                    log.warning(f"balance fetch error: {be}")
+
+                # Open option positions
+                try:
+                    positions = rh.options.get_open_option_positions() or []
+                    open_pos = []
+                    for pos in positions:
+                        qty = float(pos.get("quantity", 0))
+                        if qty <= 0:
+                            continue
+                        avg = float(pos.get("average_price", 0))
+                        exp = pos.get("expiration_date", "")
+                        sym = pos.get("chain_symbol", "SPY")
+                        opt_id = pos.get("option") or pos.get("option_id") or ""
+                        # get current mark price
+                        mark = avg
+                        try:
+                            if opt_id:
+                                # extract UUID from URL if needed
+                                uid = opt_id.rstrip("/").split("/")[-1]
+                                qr = rh.options.get_option_market_data_by_id(uid) or {}
+                                m = qr.get("adjusted_mark_price") or qr.get("mark_price")
+                                if m:
+                                    mark = round(float(m), 4)
+                        except Exception:
+                            pass
+                        pnl_pct = round((mark - avg) / avg * 100, 1) if avg else 0
+                        pnl_usd = round((mark - avg) * qty * 100, 2)
+                        open_pos.append({
+                            "symbol": sym,
+                            "expiration": exp,
+                            "avg_price": avg,
+                            "mark_price": mark,
+                            "quantity": qty,
+                            "pnl_pct": pnl_pct,
+                            "pnl_usd": pnl_usd,
+                        })
+                    patch["open_positions"] = open_pos
+                    log.info(f"open positions: {len(open_pos)}")
+                except Exception as pe:
+                    log.warning(f"positions fetch error: {pe}")
+
                 _write_state(patch)
                 _ticker_status["last_ok"] = datetime.now(ET).strftime("%H:%M:%S ET")
                 log.info(f"tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
+
         except Exception as e:
             import traceback
             log.warning(f"ticker error: {e}\n{traceback.format_exc()}")
             _ticker_status["logged_in"] = False
             _ticker_status["last_error"] = str(e)
-            logged_in = False  # force re-login next iteration
+            logged_in = False
+
         for _ in range(60):
             time.sleep(1)
 
@@ -126,31 +177,29 @@ def api_state():
     total_pnl = sum(t.get("pnl_usd", 0) or 0 for t in closed)
     bal = g.get("balance") or (closed[-1].get("balance_after") if closed else None) or 21.64
     return jsonify({
-        "spot":         g.get("spot"),
-        "vix":          g.get("vix"),
-        "vix3m":        g.get("vix3m"),
-        "ts_label":     g.get("ts_label"),
-        "ts_slope":     g.get("ts_slope"),
-        "vanna_label":  g.get("vanna_label"),
-        "direction":    g.get("direction"),
-        "confidence":   g.get("confidence"),
-        "last_action":  g.get("last_action", "Bot starting up..."),
+        "spot":           g.get("spot"),
+        "vix":            g.get("vix"),
+        "vix3m":          g.get("vix3m"),
+        "ts_label":       g.get("ts_label"),
+        "ts_slope":       g.get("ts_slope"),
+        "vanna_label":    g.get("vanna_label"),
+        "direction":      g.get("direction"),
+        "confidence":     g.get("confidence"),
+        "last_action":    g.get("last_action", "Bot starting up..."),
         "market_updated": g.get("market_updated"),
-        "balance":      round(float(bal), 2),
-        "total_trades": len(closed),
-        "total_pnl":    round(total_pnl, 2),
-        "trades":       trades[-5:],
-        "ts":           datetime.now(ET).strftime("%H:%M:%S ET"),
-        "rh_logged_in": _ticker_status["logged_in"],
-        "rh_error":     _ticker_status["last_error"],
-        "rh_last_ok":   _ticker_status["last_ok"],
+        "balance":        round(float(bal), 2),
+        "total_trades":   len(closed),
+        "total_pnl":      round(total_pnl, 2),
+        "trades":         trades[-5:],
+        "open_positions": g.get("open_positions", []),
+        "ts":             datetime.now(ET).strftime("%H:%M:%S ET"),
+        "rh_logged_in":   _ticker_status["logged_in"],
+        "rh_error":       _ticker_status["last_error"],
+        "rh_last_ok":     _ticker_status["last_ok"],
     })
-
-_ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
 
 @app.route("/api/push", methods=["POST"])
 def api_push():
-    """Allow scheduler/worker container to push state updates."""
     key = request.headers.get("X-Push-Key", "")
     expected = os.getenv("PUSH_SECRET", "heatseeker")
     if key != expected:

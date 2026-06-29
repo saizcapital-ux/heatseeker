@@ -112,6 +112,12 @@ body{background:#0a0a0f;color:#e8e8f0;font-family:'SF Mono',monospace;min-height
   <div class="status-updated" id="updated">—</div>
 </div>
 
+<!-- OPEN POSITIONS -->
+<div class="journal-card" id="open-pos-card" style="margin-bottom:12px;display:none">
+  <div class="status-title">🟡 Open Positions</div>
+  <div id="open-positions"></div>
+</div>
+
 <!-- RECENT TRADES -->
 <div class="journal-card">
   <div class="status-title">📋 Recent Trades — <span id="trade-count">0</span> total · P&L <span id="total-pnl" style="color:#888899">$0.00</span></div>
@@ -232,6 +238,27 @@ async function fetch_state(){
     const pnlEl=document.getElementById("total-pnl");
     pnlEl.textContent=(pnl>=0?"$+":"$-")+Math.abs(pnl).toFixed(2);
     pnlEl.style.color=pnl>=0?"#00ff88":"#ff3366";
+
+    // Open positions
+    const openPos = d.open_positions || [];
+    const opCard = document.getElementById("open-pos-card");
+    const opDiv = document.getElementById("open-positions");
+    if(openPos.length){
+      opCard.style.display="block";
+      opDiv.innerHTML = openPos.map(p => {
+        const clr = p.pnl_pct >= 0 ? "#00ff88" : "#ff3366";
+        const sign = p.pnl_pct >= 0 ? "+" : "";
+        return `<div class="j-row">
+          <span class="j-date">${p.symbol||"SPY"}</span>
+          <span style="color:#ffaa00;font-weight:700;min-width:55px">OPEN</span>
+          <span class="j-strike">exp ${p.expiration||""}</span>
+          <span style="color:#888899;font-size:10px">avg $${Number(p.avg_price||0).toFixed(2)} → $${Number(p.mark_price||0).toFixed(2)}</span>
+          <span style="color:${clr};font-weight:700;margin-left:auto">${sign}${p.pnl_pct}% ($${sign}${Number(p.pnl_usd||0).toFixed(2)})</span>
+        </div>`;
+      }).join("");
+    } else {
+      opCard.style.display="none";
+    }
 
     // Journal
     const trades=(d.trades||[]).slice().reverse();
