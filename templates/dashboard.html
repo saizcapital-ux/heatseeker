@@ -650,6 +650,47 @@ table.flow-feed tbody td:first-child { text-align:left; }
 
     </div>
 
+    <!-- Expert Vol Signals (Karsan + SpotGamma) -->
+    <div class="rp-block">
+      <div class="rp-title">🧠 Expert Vol Signals
+        <span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px">Karsan · SpotGamma</span>
+      </div>
+      <div class="creator-grid" style="grid-template-columns:1fr 1fr">
+
+        <!-- Vanna Flow (Karsan) -->
+        <div class="creator-card">
+          <span class="cc-lbl">Vanna Flow · Karsan</span>
+          <span class="cc-val" id="exp-vanna-val" style="color:var(--blue)">—</span>
+          <span class="cc-sub" id="exp-vanna-sub">VIX Δ → dealer bid/sell</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-vanna-bar" style="width:50%;background:var(--blue)"></div></div>
+        </div>
+
+        <!-- Implied Skew (Karsan) -->
+        <div class="creator-card">
+          <span class="cc-lbl">Put Skew · Karsan</span>
+          <span class="cc-val" id="exp-skew-val" style="color:var(--amber)">—</span>
+          <span class="cc-sub" id="exp-skew-sub">Put IV / Call IV ratio</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-skew-bar" style="width:50%;background:var(--amber)"></div></div>
+        </div>
+
+        <!-- Flow Premium Ratio (SpotGamma) -->
+        <div class="creator-card">
+          <span class="cc-lbl">$ Flow · SpotGamma</span>
+          <span class="cc-val" id="exp-flow-val" style="color:var(--green)">—</span>
+          <span class="cc-sub" id="exp-flow-sub">Call $ vs Put $ flow</span>
+          <div class="cc-bar-wrap"><div class="cc-bar-fill" id="exp-flow-bar" style="width:50%;background:var(--green)"></div></div>
+        </div>
+
+        <!-- AGS Pin Magnet (SpotGamma) -->
+        <div class="creator-card">
+          <span class="cc-lbl">AGS Pin · SpotGamma</span>
+          <span class="cc-val" id="exp-ags-val" style="color:var(--amber)">—</span>
+          <span class="cc-sub">Absolute Gamma Strike</span>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Today's Forecast -->
     <div class="rp-block">
       <div class="sec-hdr">
@@ -837,6 +878,7 @@ function renderLadder(ladder, gex){
   const spot  = gex.spot;
   const cwall = gex.call_wall;
   const pwall = gex.put_wall;
+  const ags   = gex.ags;
 
   // Scale bar: find max abs net GEX for normalisation
   const maxAbs = Math.max(...ladder.map(r => Math.abs(r.net_gex_m)), 0.001);
@@ -854,6 +896,7 @@ function renderLadder(ladder, gex){
     if(spot && Math.abs(s - spot) < 0.5){ rowClass="row-spot"; strikeTags+='<span class="row-tag tag-spot">NOW</span>'; }
     if(cwall && Math.abs(s - cwall) < 0.5){ rowClass=rowClass||"row-cwall"; strikeTags+='<span class="row-tag tag-cwall">CW</span>'; }
     if(pwall && Math.abs(s - pwall) < 0.5){ rowClass=rowClass||"row-pwall"; strikeTags+='<span class="row-tag tag-pwall">PW</span>'; }
+    if(ags   && Math.abs(s - ags)   < 0.5){ strikeTags+='<span class="row-tag" style="background:var(--amber);color:#000">AGS</span>'; }
 
     // GEX bar
     const pct = Math.min(Math.abs(r.net_gex_m) / maxAbs * 50, 50);
@@ -924,6 +967,68 @@ function renderFlow(gex){
       <td>${biasHtml}</td>
     </tr>`;
   }).join("");
+}
+
+// ── Expert Vol Signals renderer ───────────────────────────────────────────────
+function renderExpertSignals(g){
+  // Vanna flow (Karsan)
+  if(g.vanna_label){
+    const vmap = {
+      "strong_vanna_bid":  {c:"var(--green)", w:85, label:"Strong Bid"},
+      "vanna_bid":         {c:"var(--green)", w:65, label:"Bid"},
+      "neutral":           {c:"var(--muted2)", w:50, label:"Neutral"},
+      "vanna_headwind":    {c:"var(--amber)", w:35, label:"Headwind"},
+      "vanna_sell":        {c:"var(--red)", w:15, label:"Sell"},
+    };
+    const v = vmap[g.vanna_label] || {c:"var(--muted2)", w:50, label:g.vanna_label};
+    const vannaEl = document.getElementById("exp-vanna-val");
+    if(vannaEl){ vannaEl.textContent = v.label; vannaEl.style.color = v.c; }
+    const vannaMult = g.vanna_mult != null ? (g.vanna_mult >= 1 ? "+" : "") + ((g.vanna_mult - 1)*100).toFixed(0) + "% size" : "";
+    setText("exp-vanna-sub", vannaMult || "VIX Δ → dealer bid/sell");
+    const vb = document.getElementById("exp-vanna-bar");
+    if(vb){ vb.style.width = v.w + "%"; vb.style.background = v.c; }
+  }
+
+  // Skew signal (Karsan)
+  if(g.skew_label){
+    const smap = {
+      "extreme_put_skew":  {c:"var(--red)", w:90, label:"Extreme Fear"},
+      "heavy_put_skew":    {c:"var(--amber)", w:70, label:"Heavy Skew"},
+      "elevated_put_skew": {c:"var(--amber)", w:60, label:"Elevated"},
+      "normal":            {c:"var(--muted2)", w:50, label:"Normal"},
+      "call_skew":         {c:"var(--green)", w:30, label:"Call Skew"},
+    };
+    const s = smap[g.skew_label] || {c:"var(--muted2)", w:50, label:g.skew_label};
+    const skewEl = document.getElementById("exp-skew-val");
+    if(skewEl){ skewEl.textContent = s.label; skewEl.style.color = s.c; }
+    const skewRatio = g.skew_ratio != null ? "P/C IV: " + g.skew_ratio.toFixed(2) : "Put IV / Call IV ratio";
+    setText("exp-skew-sub", skewRatio);
+    const sb = document.getElementById("exp-skew-bar");
+    if(sb){ sb.style.width = s.w + "%"; sb.style.background = s.c; }
+  }
+
+  // Flow premium ratio (SpotGamma)
+  if(g.flow_label){
+    const fmap = {
+      "call_dominant":  {c:"var(--green)", w:80, label:"Call Dominant"},
+      "call_leaning":   {c:"var(--green)", w:60, label:"Call Leaning"},
+      "neutral":        {c:"var(--muted2)", w:50, label:"Neutral"},
+      "put_leaning":    {c:"var(--amber)", w:40, label:"Put Leaning"},
+      "put_dominant":   {c:"var(--red)", w:20, label:"Put Dominant"},
+    };
+    const f = fmap[g.flow_label] || {c:"var(--muted2)", w:50, label:g.flow_label};
+    const flowEl = document.getElementById("exp-flow-val");
+    if(flowEl){ flowEl.textContent = f.label; flowEl.style.color = f.c; }
+    const flowRatio = g.flow_ratio != null ? "Call $: " + Math.round(g.flow_ratio * 100) + "%" : "Call $ vs Put $ flow";
+    setText("exp-flow-sub", flowRatio);
+    const fb = document.getElementById("exp-flow-bar");
+    if(fb){ fb.style.width = f.w + "%"; fb.style.background = f.c; }
+  }
+
+  // AGS pin magnet (SpotGamma)
+  if(g.ags != null){
+    setText("exp-ags-val", "$" + Math.round(g.ags));
+  }
 }
 
 // ── AJAX poll every 60s ───────────────────────────────────────────────────────
@@ -1157,6 +1262,9 @@ async function fetchState(){
 
     // Options Flow
     if(g.flow_feed !== undefined || g.flow_ratio !== undefined) renderFlow(g);
+
+    // Expert Vol Signals
+    renderExpertSignals(g);
 
     // Journal
     if(d.journal && d.journal.length){
