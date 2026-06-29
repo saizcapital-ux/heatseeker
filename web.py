@@ -153,34 +153,40 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
-                # GEX computation — every 5th tick
+                # GEX computation — every 5th tick (needs per-contract market data calls)
                 _tick_count += 1
                 if _tick_count % 5 == 0:
                     try:
-                        spot = patch.get("spot") or 580
+                        spot = patch.get("spot") or _read_state().get("spot") or 580
                         exp_today = datetime.now(ET).strftime("%Y-%m-%d")
-                        all_opts = rh.options.find_options_for_stock_by_expiration(
-                            "SPY", exp_today, optionType=None
+                        # Step 1: get instrument list (no greeks here)
+                        all_opts = rh.options.find_options_by_expiration(
+                            inputSymbols="SPY", expirationDate=exp_today
                         ) or []
+                        # Filter to ATM ±25 to limit API calls
+                        atm_opts = [o for o in all_opts
+                                    if abs(round(float(o.get("strike_price", 0))) - spot) <= 25]
 
                         gex_map = {}
-                        for opt in all_opts:
+                        for opt in atm_opts:
                             try:
                                 strike = round(float(opt.get("strike_price", 0)))
-                                if abs(strike - spot) > 25:
-                                    continue
-                                oi = float(opt.get("open_interest") or 0)
-                                gamma = float(opt.get("gamma") or 0)
                                 opt_type = opt.get("type", "")
+                                opt_id = opt.get("id", "")
+                                # Step 2: fetch live market data (greeks + OI) per contract
+                                md_list = rh.options.get_option_market_data_by_id(opt_id) or [{}]
+                                md = md_list[0] if isinstance(md_list, list) else (md_list or {})
+                                oi = int(float(md.get("open_interest") or 0))
+                                gamma = float(md.get("gamma") or 0)
                                 gex = round(oi * gamma * 100 / 1e6, 3)  # in $M
                                 if strike not in gex_map:
                                     gex_map[strike] = {"call_gex": 0, "put_gex": 0, "call_oi": 0, "put_oi": 0}
                                 if opt_type == "call":
                                     gex_map[strike]["call_gex"] = gex
-                                    gex_map[strike]["call_oi"] = int(oi)
+                                    gex_map[strike]["call_oi"] = oi
                                 else:
                                     gex_map[strike]["put_gex"] = -gex
-                                    gex_map[strike]["put_oi"] = int(oi)
+                                    gex_map[strike]["put_oi"] = oi
                             except Exception:
                                 continue
 

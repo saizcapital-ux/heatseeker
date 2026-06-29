@@ -24,6 +24,30 @@ def _write_gex_update(update: dict):
     with open(GEX_STATE, "w") as f:
         json.dump(state, f, indent=2)
 
+def _push_state_to_web():
+    """Push gex_state.json to the web container via /api/push (Railway cross-container)."""
+    web_url = os.getenv("WEB_URL", "").rstrip("/")
+    if not web_url:
+        return
+    try:
+        with open(GEX_STATE) as f:
+            state = json.load(f)
+        import urllib.request
+        body = json.dumps(state).encode()
+        req = urllib.request.Request(
+            f"{web_url}/api/push",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Push-Key": os.getenv("PUSH_SECRET", "heatseeker"),
+            },
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+        log.info("Pushed GEX state to web container")
+    except Exception as e:
+        log.warning(f"Push to web failed: {e}")
+
 def run_gex_analysis():
     """Live GEX scan every 15 min during market hours — populates dashboard without trading."""
     now = datetime.now(ET)
@@ -34,6 +58,7 @@ def run_gex_analysis():
         import importlib, scripts.spy_trader as trader
         importlib.reload(trader)
         trader.analyze_gex_only()
+        _push_state_to_web()
     except SystemExit:
         pass
     except Exception as e:
@@ -55,6 +80,7 @@ def run_entry():
         trader.main()
     except SystemExit:
         pass
+        _push_state_to_web()
     except Exception as e:
         log.error(f"Entry error: {e}", exc_info=True)
 
@@ -75,6 +101,7 @@ def run_exit(force=False):
         exiter.main()
     except SystemExit:
         pass
+        _push_state_to_web()
     except Exception as e:
         log.error(f"Exit error: {e}", exc_info=True)
 
