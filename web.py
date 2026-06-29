@@ -3,7 +3,7 @@
 import json, os, threading, time, logging, pathlib
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 ET  = ZoneInfo("America/New_York")
@@ -69,6 +69,8 @@ def _ticker():
                              store_session=True, expiresIn=86400,
                              pickle_name="heatseeker")
                     logged_in = True
+                    _ticker_status["logged_in"] = True
+                    _ticker_status["last_error"] = None
                     log.info("RH login OK")
 
             if logged_in:
@@ -98,9 +100,14 @@ def _ticker():
                     if bal: patch["balance"] = round(bal, 2)
                 except Exception: pass
                 _write_state(patch)
+                _ticker_status["last_ok"] = datetime.now(ET).strftime("%H:%M:%S ET")
                 log.info(f"tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
         except Exception as e:
-            log.warning(f"ticker error: {e}")
+            import traceback
+            log.warning(f"ticker error: {e}\n{traceback.format_exc()}")
+            _ticker_status["logged_in"] = False
+            _ticker_status["last_error"] = str(e)
+            logged_in = False  # force re-login next iteration
         for _ in range(60):
             time.sleep(1)
 
@@ -134,7 +141,28 @@ def api_state():
         "total_pnl":    round(total_pnl, 2),
         "trades":       trades[-5:],
         "ts":           datetime.now(ET).strftime("%H:%M:%S ET"),
+        "rh_logged_in": _ticker_status["logged_in"],
+        "rh_error":     _ticker_status["last_error"],
+        "rh_last_ok":   _ticker_status["last_ok"],
     })
+
+_ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
+
+@app.route("/api/push", methods=["POST"])
+def api_push():
+    """Allow scheduler/worker container to push state updates."""
+    key = request.headers.get("X-Push-Key", "")
+    expected = os.getenv("PUSH_SECRET", "heatseeker")
+    if key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True) or {}
+    if data:
+        _write_state(data)
+    return jsonify({"ok": True})
+
+@app.route("/api/ticker-status")
+def api_ticker_status():
+    return jsonify(_ticker_status)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)

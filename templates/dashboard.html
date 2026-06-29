@@ -215,7 +215,15 @@ async function fetch_state(){
     }
 
     // Status
-    document.getElementById("last-action").textContent=d.last_action||"—";
+    let statusText = d.last_action||"—";
+    if(d.rh_error && !d.rh_logged_in){
+      statusText += "\n⚠️ RH auth error: " + d.rh_error.slice(0,120);
+    } else if(d.rh_logged_in){
+      statusText += (d.rh_last_ok ? "\n✅ RH connected — last tick: "+d.rh_last_ok : "\n✅ RH logged in");
+    } else {
+      statusText += "\n⏳ RH connecting... (check Railway logs)";
+    }
+    document.getElementById("last-action").textContent=statusText;
     document.getElementById("updated").textContent="Updated "+d.ts;
 
     // Stats
