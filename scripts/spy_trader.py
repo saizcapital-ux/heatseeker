@@ -159,7 +159,7 @@ def has_open_position():
         for p in positions:
             qty = float(p.get("quantity", 0) or 0)
             if qty > 0:
-                exp = (p.get("option", {}) or {}).get("expiration_date", "")
+                exp = p.get("expiration_date", "")
                 symbol = p.get("chain_symbol", "")
                 if symbol == "SPY" and exp == today:
                     log.info(f"Open position found: {symbol} exp={exp} qty={qty}")
