@@ -1,0 +1,13 @@
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/chain"
+  to = "/.netlify/functions/chain"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"

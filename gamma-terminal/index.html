@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamma Flow Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="engine.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #21262d;
+  --pos:     #3fb950;
+  --neg:     #f85149;
+  --spot:    #58a6ff;
+  --flip:    #d29922;
+  --text:    #e6edf3;
+  --muted:   #7d8590;
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── header ── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 56px;
+  background: #0a0d12;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.logo {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: var(--flip);
+  white-space: nowrap;
+}
+
+.sym-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.sym-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sym-btn:hover { border-color: var(--spot); color: var(--spot); }
+.sym-btn.active { border-color: var(--spot); color: var(--spot); background: rgba(88,166,255,0.08); }
+.sym-btn:focus-visible { outline: 2px solid var(--spot); outline-offset: 2px; }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: var(--font-mono);
+}
+
+#spot-display {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--spot);
+}
+
+#ts-display {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.refresh-btn:hover { border-color: var(--text); color: var(--text); }
+.refresh-btn:focus-visible { outline: 2px solid var(--spot); outline-offset: 2px; }
+
+/* ── regime banner ── */
+#regime-banner {
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  flex-wrap: wrap;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+#regime-banner.pos {
+  background: rgba(63,185,80,0.07);
+  border-left: 4px solid var(--pos);
+}
+#regime-banner.neg {
+  background: rgba(248,81,73,0.07);
+  border-left: 4px solid var(--neg);
+}
+
+.regime-label {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.regime-label.pos { color: var(--pos); }
+.regime-label.neg { color: var(--neg); }
+
+.regime-desc {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 520px;
+}
+
+.regime-gex {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── metric row ── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.metric-card {
+  background: var(--surface);
+  padding: 16px 20px;
+}
+
+.metric-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.metric-value.flip  { color: var(--flip); }
+.metric-value.call  { color: var(--pos); }
+.metric-value.put   { color: var(--neg); }
+.metric-value.pain  { color: var(--muted); }
+
+.metric-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ── controls ── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--spot);
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.toggle-label strong { color: var(--text); }
+
+.expiry-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.expiry-select:focus-visible { outline: 2px solid var(--spot); }
+
+/* ── main content ── */
+main {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.chart-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.chart-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  padding: 12px 16px 0;
+}
+
+/* ── loading / error ── */
+#status-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(13,17,23,0.92);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  font-family: var(--font-mono);
+}
+
+#status-overlay.visible {
+  display: flex;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--spot);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; border-top-color: var(--muted); }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.status-message {
+  color: var(--text);
+  font-size: 14px;
+  text-align: center;
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+.status-message.error { color: var(--neg); }
+.status-hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+/* ── responsive ── */
+@media (max-width: 768px) {
+  header { height: auto; padding: 12px 16px; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .metric-value { font-size: 18px; }
+  main { padding: 12px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚡ GAMMA FLOW</div>
+
+  <div class="sym-buttons" role="group" aria-label="Symbol selector">
+    <button class="sym-btn active" data-sym="SPX" aria-pressed="true">SPX</button>
+    <button class="sym-btn" data-sym="SPY" aria-pressed="false">SPY</button>
+    <button class="sym-btn" data-sym="VIX" aria-pressed="false">VIX</button>
+    <button class="sym-btn" data-sym="NDX" aria-pressed="false">NDX</button>
+  </div>
+
+  <div class="header-right">
+    <div>
+      <div id="spot-display">—</div>
+      <div id="ts-display">as of —</div>
+    </div>
+    <button class="refresh-btn" id="refresh-btn" aria-label="Refresh data">↻ Refresh</button>
+  </div>
+</header>
+
+<div id="regime-banner" class="pos" role="status" aria-live="polite">
+  <div>
+    <div class="regime-label pos" id="regime-label">—</div>
+    <div class="regime-desc" id="regime-desc">Loading…</div>
+  </div>
+  <div class="regime-gex" id="regime-gex" style="color:var(--muted)">—</div>
+</div>
+
+<div class="metrics">
+  <div class="metric-card">
+    <div class="metric-label">Gamma Flip</div>
+    <div class="metric-value flip" id="m-flip">—</div>
+    <div class="metric-sub" id="m-flip-sub">regime boundary</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Call Wall</div>
+    <div class="metric-value call" id="m-cwall">—</div>
+    <div class="metric-sub">largest call OI above spot</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Put Wall</div>
+    <div class="metric-value put" id="m-pwall">—</div>
+    <div class="metric-sub">largest put OI below spot</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Max Pain</div>
+    <div class="metric-value pain" id="m-pain">—</div>
+    <div class="metric-sub" id="m-flows">charm — · vanna —</div>
+  </div>
+</div>
+
+<div class="controls">
+  <label class="toggle-wrap">
+    <input type="checkbox" id="dealer-toggle" checked aria-label="Dealer long calls assumption">
+    <span class="toggle-label"><strong>Dealer Long Calls</strong> — assumes dealers hedge by buying calls. Uncheck to flip all GEX signs.</span>
+  </label>
+
+  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+    Expiry:
+    <select class="expiry-select" id="expiry-select" aria-label="Filter by expiry">
+      <option value="all">All expirations</option>
+    </select>
+  </label>
+</div>
+
+<main>
+  <div class="chart-panel">
+    <div class="chart-title">Net GEX by Strike  ($M per 1% move)</div>
+    <div id="chart-gex" style="height:420px"></div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="chart-title">GEX Surface — Strike × Expiry</div>
+    <div id="chart-3d" style="height:460px"></div>
+  </div>
+</main>
+
+<div id="status-overlay" role="alert" aria-live="assertive">
+  <div class="spinner" id="spinner"></div>
+  <div class="status-message" id="status-msg">Fetching CBOE data…</div>
+  <div class="status-hint" id="status-hint"></div>
+</div>
+
+<script>
+// ── state ────────────────────────────────────────────────────────────────────
+const state = {
+  symbol: 'SPX',
+  dealerLongCalls: true,
+  expiryFilter: 'all',
+  lastResult: null,
+};
+
+const PLOTLY_CFG = { responsive: true, displayModeBar: false };
+
+const DARK_LAYOUT = {
+  paper_bgcolor: '#161b22',
+  plot_bgcolor:  '#161b22',
+  font:          { family: "'IBM Plex Mono', monospace", color: '#e6edf3', size: 11 },
+  margin:        { l: 60, r: 20, t: 20, b: 60 },
+  xaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d' },
+  yaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d' },
+};
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+function fmt(n, decimals = 0) {
+  if (n == null || isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function fmtGEX(v) {
+  const b = v / 1e9;
+  if (Math.abs(b) >= 1) return (b > 0 ? '+' : '') + b.toFixed(2) + 'B';
+  const m = v / 1e6;
+  return (m > 0 ? '+' : '') + m.toFixed(0) + 'M';
+}
+
+function showLoading() {
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('status-msg').className = 'status-message';
+  document.getElementById('status-msg').textContent = 'Fetching CBOE data…';
+  document.getElementById('status-hint').textContent = '';
+  document.getElementById('status-overlay').classList.add('visible');
+}
+
+function hideOverlay() {
+  document.getElementById('status-overlay').classList.remove('visible');
+}
+
+function showError(e) {
+  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('status-msg').className = 'status-message error';
+  const msg = e.message || String(e);
+  let friendly = 'The CBOE feed is unreachable.';
+  let hint = 'This usually means the market is closed, the CDN is down, or the Netlify function is not deployed. Try again after 9:30 AM ET.';
+  if (msg.includes('404')) {
+    friendly = 'No options data found for this symbol.';
+    hint = 'CBOE may not carry options data for this ticker. Try SPX or SPY.';
+  } else if (msg.includes('502') || msg.includes('503')) {
+    friendly = 'The CBOE data feed returned an error.';
+    hint = 'The market may be closed or experiencing technical issues. Try again in a few minutes.';
+  } else if (msg.toLowerCase().includes('failed to fetch') || msg.includes('network')) {
+    friendly = 'Network connection failed.';
+    hint = 'Check your internet connection. If you\'re running locally, make sure the Netlify function is deployed.';
+  }
+  document.getElementById('status-msg').textContent = friendly;
+  document.getElementById('status-hint').textContent = hint;
+  document.getElementById('status-overlay').classList.add('visible');
+}
+
+// ── render ───────────────────────────────────────────────────────────────────
+function render(result) {
+  hideOverlay();
+  state.lastResult = result;
+  const { spot, ts, analytics, regime, symbol } = result;
+  const { netGEX, gexByStrike, gexByExpiry, gexSurface, gammaFlip, maxPain,
+          callWall, putWall, totalCharmFlow, totalVannaFlow, strikes } = analytics;
+
+  // Header
+  document.getElementById('spot-display').textContent = '$' + fmt(spot, 2);
+  document.getElementById('ts-display').textContent = ts ? 'as of ' + ts : '15-min delayed';
+
+  // Regime banner
+  const banner = document.getElementById('regime-banner');
+  banner.className = regime.posGamma ? 'pos' : 'neg';
+  const lbl = document.getElementById('regime-label');
+  lbl.className = 'regime-label ' + (regime.posGamma ? 'pos' : 'neg');
+  lbl.textContent = regime.gexLabel;
+
+  const flipStr  = gammaFlip != null ? '$' + fmt(gammaFlip) : 'unknown';
+  const cwStr    = callWall  != null ? '$' + fmt(callWall)  : '—';
+  const pwStr    = putWall   != null ? '$' + fmt(putWall)   : '—';
+  if (regime.posGamma) {
+    document.getElementById('regime-desc').textContent =
+      `Dealers are net-long gamma (${regime.vixLabel} vol). Expect mean-reversion between ${pwStr} and ${cwStr}. ${flipStr} is the regime boundary — a break below turns NEGATIVE.`;
+  } else {
+    document.getElementById('regime-desc').textContent =
+      `Dealers are net-short gamma (${regime.vixLabel} vol). Moves are amplified — dealers chase price. ${flipStr} is the flip level; a reclaim turns POSITIVE and dampens volatility.`;
+  }
+  const gexEl = document.getElementById('regime-gex');
+  gexEl.textContent = fmtGEX(netGEX);
+  gexEl.style.color = regime.posGamma ? 'var(--pos)' : 'var(--neg)';
+
+  // Metrics
+  document.getElementById('m-flip').textContent  = gammaFlip != null ? '$' + fmt(gammaFlip) : '—';
+  document.getElementById('m-cwall').textContent = callWall  != null ? '$' + fmt(callWall)  : '—';
+  document.getElementById('m-pwall').textContent = putWall   != null ? '$' + fmt(putWall)   : '—';
+  document.getElementById('m-pain').textContent  = maxPain   != null ? '$' + fmt(maxPain)   : '—';
+
+  const charmB = (totalCharmFlow / 1e6).toFixed(1);
+  const vannaB = (totalVannaFlow / 1e6).toFixed(1);
+  document.getElementById('m-flows').textContent =
+    `charm ${charmB > 0 ? '+' : ''}${charmB}M  ·  vanna ${vannaB > 0 ? '+' : ''}${vannaB}M`;
+
+  // Expiry dropdown
+  const expirySelect = document.getElementById('expiry-select');
+  const currentExpiry = expirySelect.value;
+  const expiries = Object.keys(gexByExpiry).sort();
+  expirySelect.innerHTML = '<option value="all">All expirations</option>';
+  for (const e of expiries) {
+    const opt = document.createElement('option');
+    opt.value = e; opt.textContent = e;
+    expirySelect.appendChild(opt);
+  }
+  if (expiries.includes(currentExpiry)) expirySelect.value = currentExpiry;
+
+  renderGEXChart(result);
+  render3D(result);
+}
+
+function getFilteredGEX(result) {
+  const { analytics } = result;
+  const filter = state.expiryFilter;
+  if (filter === 'all') return analytics.gexByStrike;
+
+  // Recompute GEX for this expiry only
+  // We stored gexSurface entries
+  const filtered = {};
+  for (const pt of analytics.gexSurface) {
+    if (pt.expiry === filter) {
+      filtered[pt.strike] = (filtered[pt.strike] || 0) + pt.gex;
+    }
+  }
+  return filtered;
+}
+
+function renderGEXChart(result) {
+  const { spot, analytics } = result;
+  const gexByStrike = getFilteredGEX(result);
+
+  // Filter to spot ± 15% (or ± 300 for SPX-like)
+  const range = Math.max(spot * 0.12, 50);
+  const visStrikes = Object.keys(gexByStrike)
+    .map(Number)
+    .filter(s => Math.abs(s - spot) <= range)
+    .sort((a, b) => a - b);
+
+  const vals  = visStrikes.map(s => gexByStrike[s] / 1e6);
+  const colors = vals.map(v => v >= 0 ? 'rgba(63,185,80,0.75)' : 'rgba(248,81,73,0.75)');
+
+  const barTrace = {
+    type: 'bar',
+    x: vals,
+    y: visStrikes.map(String),
+    orientation: 'h',
+    marker: { color: colors },
+    hovertemplate: '<b>$%{y}</b><br>GEX: %{x:.2f}M<extra></extra>',
+    name: 'GEX',
+  };
+
+  // Spot + flip as vertical shapes
+  const shapes = [
+    {
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: 0, x1: 0, y0: 0, y1: 1,
+      line: { color: '#30363d', width: 1, dash: 'dot' },
+    },
+  ];
+
+  const annotations = [];
+
+  if (spot) {
+    shapes.push({
+      type: 'line', xref: 'paper', yref: 'y',
+      x0: 0, x1: 1, y0: String(spot), y1: String(spot),
+      line: { color: 'var(--spot)', width: 1.5, dash: 'dash' },
+    });
+    annotations.push({
+      xref: 'paper', yref: 'y',
+      x: 1, y: String(spot),
+      text: ' SPOT', showarrow: false,
+      font: { color: '#58a6ff', size: 10, family: 'IBM Plex Mono' },
+      xanchor: 'left',
+    });
+  }
+
+  if (analytics.gammaFlip != null) {
+    const flipStr = String(Math.round(analytics.gammaFlip));
+    shapes.push({
+      type: 'line', xref: 'paper', yref: 'y',
+      x0: 0, x1: 1, y0: flipStr, y1: flipStr,
+      line: { color: '#d29922', width: 2 },
+    });
+    annotations.push({
+      xref: 'paper', yref: 'y',
+      x: 0.01, y: flipStr,
+      text: 'FLIP', showarrow: false,
+      font: { color: '#d29922', size: 10, family: 'IBM Plex Mono' },
+      yanchor: 'bottom',
+    });
+  }
+
+  const layout = {
+    ...DARK_LAYOUT,
+    shapes,
+    annotations,
+    xaxis: { ...DARK_LAYOUT.xaxis, title: { text: '$M per 1% move', font: { size: 10 } } },
+    yaxis: { ...DARK_LAYOUT.yaxis, title: null, type: 'category', tickfont: { size: 10 } },
+    bargap: 0.15,
+    margin: { l: 70, r: 90, t: 12, b: 40 },
+  };
+
+  Plotly.react('chart-gex', [barTrace], layout, PLOTLY_CFG);
+}
+
+function render3D(result) {
+  const { analytics } = result;
+  const surface = analytics.gexSurface;
+  if (!surface.length) return;
+
+  const strikes = [...new Set(surface.map(p => p.strike))].sort((a, b) => a - b);
+  const expiries = [...new Set(surface.map(p => p.expiry))].sort();
+
+  // Build Z matrix [expiry][strike]
+  const gexMap = {};
+  for (const pt of surface) {
+    if (!gexMap[pt.expiry]) gexMap[pt.expiry] = {};
+    gexMap[pt.expiry][pt.strike] = (gexMap[pt.expiry][pt.strike] || 0) + pt.gex;
+  }
+  const z = expiries.map(exp => strikes.map(s => (gexMap[exp] && gexMap[exp][s]) ? gexMap[exp][s] / 1e6 : 0));
+
+  const surfaceTrace = {
+    type: 'surface',
+    x: strikes,
+    y: expiries,
+    z,
+    colorscale: [[0, '#f85149'], [0.4, '#3d1f1e'], [0.5, '#161b22'], [0.6, '#1a2e1a'], [1, '#3fb950']],
+    showscale: false,
+    hovertemplate: 'Strike: %{x}<br>Expiry: %{y}<br>GEX: %{z:.1f}M<extra></extra>',
+  };
+
+  const layout3d = {
+    paper_bgcolor: '#161b22',
+    scene: {
+      bgcolor: '#0d1117',
+      xaxis: { title: 'Strike', gridcolor: '#21262d', color: '#7d8590' },
+      yaxis: { title: 'Expiry', gridcolor: '#21262d', color: '#7d8590' },
+      zaxis: { title: 'GEX $M', gridcolor: '#21262d', color: '#7d8590' },
+    },
+    font: { family: "'IBM Plex Mono', monospace", color: '#e6edf3', size: 10 },
+    margin: { l: 0, r: 0, t: 10, b: 0 },
+  };
+
+  Plotly.react('chart-3d', [surfaceTrace], layout3d, PLOTLY_CFG);
+}
+
+// ── fetch ────────────────────────────────────────────────────────────────────
+async function fetchAndRender() {
+  showLoading();
+  const url = `/api/chain?symbol=${state.symbol}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const raw = await r.json();
+    if (raw.error) throw new Error(raw.error);
+    const result = window.GammaEngine.analyze(raw, state.symbol, state.dealerLongCalls);
+    render(result);
+  } catch (e) {
+    showError(e);
+  }
+}
+
+// ── event listeners ──────────────────────────────────────────────────────────
+document.querySelectorAll('.sym-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sym-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
+    btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
+    state.symbol = btn.dataset.sym;
+    fetchAndRender();
+  });
+});
+
+document.getElementById('refresh-btn').addEventListener('click', fetchAndRender);
+
+document.getElementById('dealer-toggle').addEventListener('change', e => {
+  state.dealerLongCalls = e.target.checked;
+  if (state.lastResult) {
+    // Re-run analytics with flipped sign, no re-fetch
+    const raw = state.lastResult._raw;
+    if (raw) {
+      const result = window.GammaEngine.analyze(raw, state.symbol, state.dealerLongCalls);
+      result._raw = raw;
+      render(result);
+    } else {
+      fetchAndRender();
+    }
+  }
+});
+
+document.getElementById('expiry-select').addEventListener('change', e => {
+  state.expiryFilter = e.target.value;
+  if (state.lastResult) {
+    renderGEXChart(state.lastResult);
+  }
+});
+
+// Store raw on fetch so toggle can re-compute without re-fetch
+const _origFetch = fetchAndRender;
+async function fetchAndRenderWithCache() {
+  showLoading();
+  const url = `/api/chain?symbol=${state.symbol}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const raw = await r.json();
+    if (raw.error) throw new Error(raw.error);
+    const result = window.GammaEngine.analyze(raw, state.symbol, state.dealerLongCalls);
+    result._raw = raw;
+    render(result);
+  } catch (e) {
+    showError(e);
+  }
+}
+
+// Auto-refresh every 5 minutes
+setInterval(fetchAndRenderWithCache, 5 * 60 * 1000);
+
+// Initial load
+fetchAndRenderWithCache();
+</script>
+</body>
+</html>
