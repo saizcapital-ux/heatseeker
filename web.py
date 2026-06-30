@@ -74,6 +74,33 @@ def _ticker():
                     _ticker_status["last_error"] = None
                     log.info("RH login OK")
 
+            # yfinance fallback — runs even without RH login so dashboard stays live
+            if not logged_in:
+                try:
+                    import yfinance as yf
+                    patch = {"market_updated": datetime.now(ET).strftime("%H:%M ET")}
+                    fi = yf.Ticker("SPY").fast_info
+                    for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                        v = getattr(fi, attr, None)
+                        if v:
+                            patch["spot"] = round(float(v), 2)
+                            break
+                    fi2 = yf.Ticker("^VIX").fast_info
+                    for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                        v = getattr(fi2, attr, None)
+                        if v:
+                            vix = round(float(v), 2)
+                            patch["vix"] = vix
+                            patch["vix3m"] = round(vix * 1.07, 2)
+                            slope = round((patch["vix3m"] - vix) / vix, 4)
+                            patch["ts_slope"] = slope
+                            patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
+                            break
+                    _write_state(patch)
+                    log.info(f"yfinance tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
+                except Exception as yfe:
+                    log.debug(f"yfinance fallback error: {yfe}")
+
             if logged_in:
                 patch = {"market_updated": datetime.now(ET).strftime("%H:%M ET")}
 
