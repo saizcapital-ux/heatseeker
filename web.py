@@ -110,15 +110,33 @@ def _ticker():
                 if raw:
                     patch["spot"] = round(float(raw), 2)
 
-                # VIX via index UUID endpoint
-                vd = rh.helper.request_get(
-                    f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/"
-                )
-                if vd and vd.get("value"):
-                    vix = round(float(vd["value"]), 2)
-                    patch["vix"] = vix
-                    patch["vix3m"] = round(vix * 1.07, 2)
-                    slope = round((patch["vix3m"] - vix) / vix, 4)
+                # VIX — try multiple endpoints
+                vix_val = None
+                for vix_url in [
+                    f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/",
+                    "https://api.robinhood.com/marketdata/index-instruments/",
+                ]:
+                    try:
+                        vd = rh.helper.request_get(vix_url) or {}
+                        raw_vix = vd.get("value") or vd.get("last_trade_price")
+                        if raw_vix:
+                            vix_val = round(float(raw_vix), 2)
+                            break
+                    except Exception:
+                        pass
+                if not vix_val:
+                    try:
+                        # Fallback: VIX from quotes endpoint
+                        vq = rh.stocks.get_quotes(["VIX"], info=None) or [{}]
+                        raw_vix = vq[0].get("last_trade_price") or vq[0].get("adjusted_previous_close")
+                        if raw_vix:
+                            vix_val = round(float(raw_vix), 2)
+                    except Exception:
+                        pass
+                if vix_val:
+                    patch["vix"] = vix_val
+                    patch["vix3m"] = round(vix_val * 1.07, 2)
+                    slope = round((patch["vix3m"] - vix_val) / vix_val, 4)
                     patch["ts_slope"] = slope
                     patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
 
@@ -201,67 +219,10 @@ def _ticker():
                 except Exception as ce:
                     log.warning(f"candle fetch error: {ce}")
 
-                # GEX computation — every 5th tick (needs per-contract market data calls)
+                # GEX is computed by the scheduler worker and pushed via /api/push
+                # Removed from web ticker — find_options_by_expiration loads 7+ pages
+                # and blocks the ticker loop for minutes
                 _tick_count += 1
-                if _tick_count % 5 == 0:
-                    try:
-                        spot = patch.get("spot") or _read_state().get("spot") or 580
-                        exp_today = datetime.now(ET).strftime("%Y-%m-%d")
-                        # Step 1: get instrument list (no greeks here)
-                        all_opts = rh.options.find_options_by_expiration(
-                            inputSymbols="SPY", expirationDate=exp_today
-                        ) or []
-                        # Filter to ATM ±25 to limit API calls
-                        atm_opts = [o for o in all_opts
-                                    if abs(round(float(o.get("strike_price", 0))) - spot) <= 25]
-
-                        gex_map = {}
-                        for opt in atm_opts:
-                            try:
-                                strike = round(float(opt.get("strike_price", 0)))
-                                opt_type = opt.get("type", "")
-                                opt_id = opt.get("id", "")
-                                # Step 2: fetch live market data (greeks + OI) per contract
-                                md_list = rh.options.get_option_market_data_by_id(opt_id) or [{}]
-                                md = md_list[0] if isinstance(md_list, list) else (md_list or {})
-                                oi = int(float(md.get("open_interest") or 0))
-                                gamma = float(md.get("gamma") or 0)
-                                gex = round(oi * gamma * 100 / 1e6, 3)  # in $M
-                                if strike not in gex_map:
-                                    gex_map[strike] = {"call_gex": 0, "put_gex": 0, "call_oi": 0, "put_oi": 0}
-                                if opt_type == "call":
-                                    gex_map[strike]["call_gex"] = gex
-                                    gex_map[strike]["call_oi"] = oi
-                                else:
-                                    gex_map[strike]["put_gex"] = -gex
-                                    gex_map[strike]["put_oi"] = oi
-                            except Exception:
-                                continue
-
-                        if gex_map:
-                            sorted_strikes = sorted(gex_map.keys())
-                            patch["gex_by_strike"] = [{"strike": s, **gex_map[s]} for s in sorted_strikes]
-                            # Call wall: highest call OI above spot
-                            above = [s for s in sorted_strikes if s > spot]
-                            if above:
-                                patch["call_wall"] = max(above, key=lambda s: gex_map[s]["call_oi"])
-                            # Put wall: highest put OI below spot
-                            below = [s for s in sorted_strikes if s < spot]
-                            if below:
-                                patch["put_wall"] = max(below, key=lambda s: gex_map[s]["put_oi"])
-                            # Gamma flip: strike where cumulative net GEX crosses zero
-                            cumulative = 0
-                            gf = None
-                            for s in sorted_strikes:
-                                cumulative += gex_map[s]["call_gex"] + gex_map[s]["put_gex"]
-                                if cumulative > 0 and gf is None:
-                                    gf = s
-                            patch["gamma_flip"] = gf
-                            # Max pain: strike with max total OI
-                            patch["max_pain"] = max(sorted_strikes, key=lambda s: gex_map[s]["call_oi"] + gex_map[s]["put_oi"])
-                            log.info(f"GEX updated: {len(gex_map)} strikes")
-                    except Exception as ge:
-                        log.warning(f"GEX error: {ge}")
 
                 _write_state(patch)
                 _ticker_status["last_ok"] = datetime.now(ET).strftime("%H:%M:%S ET")
