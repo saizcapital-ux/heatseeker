@@ -19,6 +19,16 @@
       "pnl_pct": -80.6,
       "pnl_usd": -25.0,
       "balance_after": 21.64
+    },
+    {
+      "date": "2026-06-30",
+      "opt_type": "call",
+      "strike": 745,
+      "entry_price": 0.66,
+      "exit_price": 0.91,
+      "pnl_pct": 37.9,
+      "pnl_usd": 25.0,
+      "balance_after": 113.44
     }
   ]
 }

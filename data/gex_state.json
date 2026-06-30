@@ -7,27 +7,16 @@
   "vanna_label": "vanna_bid",
   "direction": "call",
   "confidence": 72,
-  "market_updated": "16:00 ET",
-  "balance": 22.50,
-  "last_action": "Bot ready — market opens 9:30 AM ET. Open: SPY CALL $745 exp Jun 30 (expires today). Force-close at 3:30 PM ET.",
+  "market_updated": "09:54 ET",
+  "balance": 113.44,
+  "last_action": "CLOSED: SPY CALL $745 exp Jun 30 — sold $0.91 (+$25.00, +37.9%). Account: $113.44. Ready for next entry signal.",
   "gamma_flip": 738,
   "max_pain": 740,
   "call_wall": 750,
   "put_wall": 730,
   "king_strike": 742,
   "king_gex_m": 4.63,
-  "open_positions": [
-    {
-      "symbol": "SPY",
-      "expiration": "2026-06-30",
-      "opt_type": "call",
-      "strike": 745,
-      "avg_price": 0.66,
-      "mark_price": 0.685,
-      "quantity": 1,
-      "pnl_pct": 3.8,
-      "pnl_usd": 2.50
-    }
-  ],
-  "gex_by_strike": []
+  "open_positions": [],
+  "gex_by_strike": [],
+  "candles": []
 }
