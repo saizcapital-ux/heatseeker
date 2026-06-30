@@ -1,14 +1,24 @@
 {
   "trades": [
-    {"date":"2026-06-16","opt_type":"call","strike":761,"entry_price":0.31,"exit_price":0.06,"pnl_pct":-80.6,"pnl_usd":-25.0,"balance_after":46.64},
-    {"date":"2026-06-16","opt_type":"put","strike":749,"entry_price":0.30,"exit_price":0.20,"pnl_pct":-33.3,"pnl_usd":-10.0,"balance_after":36.64},
-    {"date":"2026-06-17","opt_type":"call","strike":752,"entry_price":0.18,"exit_price":0.36,"pnl_pct":100.0,"pnl_usd":18.0,"balance_after":54.64},
-    {"date":"2026-06-18","opt_type":"put","strike":748,"entry_price":0.22,"exit_price":0.11,"pnl_pct":-50.0,"pnl_usd":-11.0,"balance_after":43.64},
-    {"date":"2026-06-19","opt_type":"call","strike":744,"entry_price":0.25,"exit_price":0.61,"pnl_pct":144.0,"pnl_usd":36.0,"balance_after":79.64},
-    {"date":"2026-06-20","opt_type":"put","strike":741,"entry_price":0.20,"exit_price":0.42,"pnl_pct":110.0,"pnl_usd":22.0,"balance_after":101.64},
-    {"date":"2026-06-23","opt_type":"call","strike":745,"entry_price":0.35,"exit_price":0.18,"pnl_pct":-48.6,"pnl_usd":-17.0,"balance_after":84.64},
-    {"date":"2026-06-24","opt_type":"call","strike":748,"entry_price":0.28,"exit_price":0.56,"pnl_pct":100.0,"pnl_usd":28.0,"balance_after":112.64},
-    {"date":"2026-06-25","opt_type":"put","strike":742,"entry_price":0.19,"exit_price":0.10,"pnl_pct":-47.4,"pnl_usd":-9.0,"balance_after":103.64},
-    {"date":"2026-06-26","opt_type":"call","strike":746,"entry_price":0.30,"exit_price":0.14,"pnl_pct":-53.3,"pnl_usd":-16.0,"balance_after":87.64}
+    {
+      "date": "2026-06-16",
+      "opt_type": "put",
+      "strike": 749,
+      "entry_price": 0.30,
+      "exit_price": 0.20,
+      "pnl_pct": -33.3,
+      "pnl_usd": -10.0,
+      "balance_after": 46.64
+    },
+    {
+      "date": "2026-06-16",
+      "opt_type": "call",
+      "strike": 761,
+      "entry_price": 0.31,
+      "exit_price": 0.06,
+      "pnl_pct": -80.6,
+      "pnl_usd": -25.0,
+      "balance_after": 21.64
+    }
   ]
 }

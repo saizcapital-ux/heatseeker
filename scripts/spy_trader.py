@@ -28,7 +28,7 @@ OPEX_CRASH_FLOOR       = 650.0  # ultimate crash hedge floor (41k OI)
 # Monthly OPEX rubber band cycle — update these each month as OI shifts
 MONTHLY_OPEX_DATE      = "2026-07-17"  # next monthly expiry
 MONTHLY_PUT_WALL       = 730.0         # dominant monthly put OI strike → structural floor
-MONTHLY_CALL_TARGET    = 745.0         # call resistance / new-high target above put wall
+MONTHLY_CALL_TARGET    = 752.0         # July call resistance (updated Jun 30, SPY @$740.88)
 # Brenner: jump risk premium is 2x larger in 0DTE — favor early entries
 JUMP_PREMIUM_DECAY_HOUR = 11    # after 11 AM ET, jump premium starts collapsing
 # Term structure: contango depth drives size multiplier (Whaley/Galai framework)

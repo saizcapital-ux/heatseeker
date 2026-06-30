@@ -9,7 +9,7 @@
   "confidence": 72,
   "market_updated": "16:00 ET",
   "balance": 22.50,
-  "last_action": "GEX scan complete — king node $742, gamma flip $738. Vanna bid + contango → LONG CALL signal active.",
+  "last_action": "Bot ready — market opens 9:30 AM ET. Open: SPY CALL $745 exp Jun 30 (expires today). Force-close at 3:30 PM ET.",
   "gamma_flip": 738,
   "max_pain": 740,
   "call_wall": 750,
@@ -17,29 +17,17 @@
   "king_strike": 742,
   "king_gex_m": 4.63,
   "open_positions": [
-    {"symbol":"SPY","expiration":"2026-06-30","opt_type":"call","strike":745,"avg_price":0.66,"mark_price":0.685,"quantity":1,"pnl_pct":3.8,"pnl_usd":2.50}
+    {
+      "symbol": "SPY",
+      "expiration": "2026-06-30",
+      "opt_type": "call",
+      "strike": 745,
+      "avg_price": 0.66,
+      "mark_price": 0.685,
+      "quantity": 1,
+      "pnl_pct": 3.8,
+      "pnl_usd": 2.50
+    }
   ],
-  "gex_by_strike": [
-    {"strike":720,"call_gex":0.42,"put_gex":-1.21,"call_oi":4200,"put_oi":12100},
-    {"strike":722,"call_gex":0.31,"put_gex":-0.98,"call_oi":3100,"put_oi":9800},
-    {"strike":724,"call_gex":0.55,"put_gex":-1.44,"call_oi":5500,"put_oi":14400},
-    {"strike":726,"call_gex":0.72,"put_gex":-1.83,"call_oi":7200,"put_oi":18300},
-    {"strike":728,"call_gex":0.88,"put_gex":-2.11,"call_oi":8800,"put_oi":21100},
-    {"strike":730,"call_gex":1.43,"put_gex":-3.72,"call_oi":14300,"put_oi":37200},
-    {"strike":732,"call_gex":1.21,"put_gex":-2.54,"call_oi":12100,"put_oi":25400},
-    {"strike":734,"call_gex":0.97,"put_gex":-1.88,"call_oi":9700,"put_oi":18800},
-    {"strike":736,"call_gex":1.54,"put_gex":-1.32,"call_oi":15400,"put_oi":13200},
-    {"strike":738,"call_gex":2.18,"put_gex":-0.87,"call_oi":21800,"put_oi":8700},
-    {"strike":740,"call_gex":4.63,"put_gex":-0.54,"call_oi":46300,"put_oi":5400},
-    {"strike":742,"call_gex":3.91,"put_gex":-0.41,"call_oi":39100,"put_oi":4100},
-    {"strike":744,"call_gex":2.77,"put_gex":-0.28,"call_oi":27700,"put_oi":2800},
-    {"strike":746,"call_gex":1.88,"put_gex":-0.19,"call_oi":18800,"put_oi":1900},
-    {"strike":748,"call_gex":1.22,"put_gex":-0.12,"call_oi":12200,"put_oi":1200},
-    {"strike":750,"call_gex":3.55,"put_gex":-0.08,"call_oi":35500,"put_oi":800},
-    {"strike":752,"call_gex":1.11,"put_gex":-0.06,"call_oi":11100,"put_oi":600},
-    {"strike":754,"call_gex":0.78,"put_gex":-0.04,"call_oi":7800,"put_oi":400},
-    {"strike":756,"call_gex":0.54,"put_gex":-0.03,"call_oi":5400,"put_oi":300},
-    {"strike":758,"call_gex":0.31,"put_gex":-0.02,"call_oi":3100,"put_oi":200},
-    {"strike":760,"call_gex":0.88,"put_gex":-0.01,"call_oi":8800,"put_oi":100}
-  ]
+  "gex_by_strike": []
 }
