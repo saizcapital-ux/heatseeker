@@ -11,10 +11,53 @@ DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 FORCE_CLOSE    = os.getenv("FORCE_CLOSE", "false").lower() == "true"
 ACCOUNT_NUMBER = "634079917"
 STOP_LOSS      = -0.50
-TRAIL_ACTIVATE = 1.00   # trailing stop kicks in at +100%
+TRAIL_ACTIVATE = 1.00   # trailing stop kicks in at +100% (or +30% if regime bullish)
 TRAIL_DROP     = 0.25   # sell if price falls 25% from peak
 
+# Regime-aware thresholds
+REGIME_TRAIL_ACTIVATE = 0.30  # activate trailing stop early at +30% if regime still bullish
+VIX_CRISIS       = 30.0       # above this → exit calls immediately
+SLOPE_BEARISH    = -0.05      # term structure below this → exit calls immediately
+
+DATA_DIR   = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+GEX_STATE  = os.path.join(DATA_DIR, "gex_state.json")
 STATE_FILE = os.path.join(os.getenv("RH_SESSION_DIR", "/data/rh_session"), "trail_state.json")
+
+def get_regime():
+    """Read current regime from gex_state.json. Returns dict with vix, ts_slope, direction, ts_label."""
+    try:
+        with open(GEX_STATE) as f:
+            s = json.load(f)
+        return {
+            "vix":       float(s.get("vix") or 0),
+            "ts_slope":  float(s.get("ts_slope") or 0),
+            "ts_label":  s.get("ts_label", ""),
+            "direction": s.get("direction", ""),
+        }
+    except Exception as e:
+        log.warning(f"Could not read regime state: {e}")
+        return {"vix": 0, "ts_slope": 0, "ts_label": "", "direction": ""}
+
+def regime_is_bullish(regime):
+    """True if regime still supports holding calls."""
+    if regime["vix"] and regime["vix"] >= VIX_CRISIS:
+        return False
+    if regime["ts_slope"] and regime["ts_slope"] < SLOPE_BEARISH:
+        return False
+    if regime["direction"] and regime["direction"] == "bearish":
+        return False
+    return True
+
+def regime_flipped_bearish(regime, opt_type):
+    """True if regime has turned against the current position."""
+    if opt_type == "call":
+        if regime["vix"] >= VIX_CRISIS:
+            return True, f"VIX crisis ({regime['vix']:.1f} >= {VIX_CRISIS})"
+        if regime["ts_slope"] < SLOPE_BEARISH:
+            return True, f"Backwardation (slope={regime['ts_slope']:.3f})"
+        if regime["direction"] == "bearish":
+            return True, "Regime flipped bearish"
+    return False, ""
 
 def load_state():
     try:
@@ -122,6 +165,10 @@ def main():
     # Clear stale state from prior trading days
     state = {k: v for k, v in state.items() if k.startswith(today)}
 
+    regime = get_regime()
+    bullish = regime_is_bullish(regime)
+    log.info(f"Regime: VIX={regime['vix']} slope={regime['ts_slope']:.3f} dir={regime['direction']} bullish={bullish}")
+
     positions = get_spy_0dte_positions()
     print("\n" + "="*60)
     print(f"HEATSEEKER EXIT CHECK - {today}")
@@ -146,27 +193,36 @@ def main():
         print(f"  SPY {p['strike']}{p['opt_type'][0].upper()}: avg=${avg:.2f} mark=${mark:.2f} P&L={pnl_pct*100:+.1f}% (${pnl_usd:+.2f})")
 
         reason = ""
+        opt_type = p.get("opt_type", "call")
+        # Activate trailing stop early (+30%) if regime bullish, otherwise wait for +100%
+        activate_threshold = REGIME_TRAIL_ACTIVATE if bullish else TRAIL_ACTIVATE
 
         if FORCE_CLOSE:
-            reason = "FORCE CLOSE (3:45 PM ET)"
+            reason = "FORCE CLOSE (3:30 PM ET)"
 
-        elif pnl_pct >= TRAIL_ACTIVATE or state.get(key, {}).get("activated"):
-            # Update high-water mark
-            prev_high = state.get(key, {}).get("high", 0)
-            new_high  = max(mark, prev_high)
-            state[key] = {"high": new_high, "activated": True}
-            trail_stop = new_high * (1 - TRAIL_DROP)
+        else:
+            # Regime flip check — exit immediately if market turned against position
+            flipped, flip_reason = regime_flipped_bearish(regime, opt_type)
+            if flipped and pnl_pct > 0:
+                reason = f"REGIME FLIP EXIT: {flip_reason}"
 
-            log.info(f"TRAILING STOP active: peak=${new_high:.2f}  trail_stop=${trail_stop:.2f}  mark=${mark:.2f}")
+            if not reason and (pnl_pct >= activate_threshold or state.get(key, {}).get("activated")):
+                prev_high = state.get(key, {}).get("high", 0)
+                new_high  = max(mark, prev_high)
+                state[key] = {"high": new_high, "activated": True}
+                trail_stop = new_high * (1 - TRAIL_DROP)
 
-            if mark <= trail_stop:
-                reason = f"TRAILING STOP HIT (peak=${new_high:.2f}, dropped {TRAIL_DROP*100:.0f}% to ${mark:.2f})"
-            else:
-                pct_from_peak = (new_high - mark) / new_high * 100
-                print(f"  --> TRAILING STOP ACTIVE: peak=${new_high:.2f}  stop=${trail_stop:.2f}  now={pct_from_peak:.1f}% below peak — HOLD")
+                log.info(f"TRAILING STOP active: peak=${new_high:.4f}  trail_stop=${trail_stop:.4f}  mark=${mark:.4f}  regime_bullish={bullish}")
 
-        elif pnl_pct <= STOP_LOSS:
-            reason = f"STOP LOSS ({pnl_pct*100:.0f}%)"
+                if mark <= trail_stop:
+                    reason = f"TRAILING STOP HIT (peak=${new_high:.4f}, dropped {TRAIL_DROP*100:.0f}% to ${mark:.4f})"
+                else:
+                    pct_from_peak = (new_high - mark) / new_high * 100
+                    regime_note = "regime BULLISH — riding" if bullish else "regime NEUTRAL — cautious"
+                    print(f"  --> TRAILING STOP ACTIVE ({regime_note}): peak=${new_high:.4f}  stop=${trail_stop:.4f}  now={pct_from_peak:.1f}% below peak — HOLD")
+
+            elif not reason and pnl_pct <= STOP_LOSS:
+                reason = f"STOP LOSS ({pnl_pct*100:.0f}%)"
 
         if reason:
             log.info(f"ACTION: {reason} - CLOSING")
@@ -182,7 +238,7 @@ def main():
                     log_exit(trade_id, mark, reason, balance_after)
                 except Exception as je:
                     log.warning(f"Journal exit log failed (non-fatal): {je}")
-        elif not reason and not state.get(key, {}).get("activated") and pnl_pct < TRAIL_ACTIVATE:
+        elif not reason and not state.get(key, {}).get("activated") and pnl_pct < activate_threshold:
             log.info("ACTION: HOLD")
             print(f"  --> HOLD")
 
