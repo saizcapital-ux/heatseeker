@@ -153,6 +153,27 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
+                # Intraday SPY candles (5-min bars, today only)
+                try:
+                    bars = rh.stocks.get_stock_historicals(
+                        "SPY", interval="5minute", span="day"
+                    ) or []
+                    candles = []
+                    for bar in bars:
+                        t = bar.get("begins_at", "")
+                        o = float(bar.get("open_price") or 0)
+                        h = float(bar.get("high_price") or 0)
+                        l = float(bar.get("low_price") or 0)
+                        c = float(bar.get("close_price") or 0)
+                        v = int(float(bar.get("volume") or 0))
+                        if o and h and l and c:
+                            candles.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
+                    if candles:
+                        patch["candles"] = candles
+                        log.info(f"candles: {len(candles)} bars")
+                except Exception as ce:
+                    log.warning(f"candle fetch error: {ce}")
+
                 # GEX computation — every 5th tick (needs per-contract market data calls)
                 _tick_count += 1
                 if _tick_count % 5 == 0:
@@ -264,6 +285,7 @@ def api_state():
         "max_pain":       g.get("max_pain"),
         "call_wall":      g.get("call_wall"),
         "put_wall":       g.get("put_wall"),
+        "candles":        g.get("candles", []),
         "ts":             datetime.now(ET).strftime("%H:%M:%S ET"),
         "rh_logged_in":   _ticker_status["logged_in"],
         "rh_error":       _ticker_status["last_error"],

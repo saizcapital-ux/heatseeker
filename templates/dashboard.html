@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HEATSEEKER — Vol Signals Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -478,6 +479,40 @@
     text-align: center;
   }
 
+  /* SPY Chart panel */
+  .spy-chart-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .spy-chart-title {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .gex-legend {
+    display: flex;
+    gap: 12px;
+    font-size: 9px;
+  }
+  .gex-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .gex-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
   /* Responsive */
   @media (max-width: 900px) {
     .row-3 { grid-template-columns: 1fr; }
@@ -523,6 +558,23 @@
 
 <!-- Main -->
 <main>
+
+<!-- SPY CANDLESTICK + GEX CLOUD -->
+<div class="spy-chart-panel">
+  <div class="spy-chart-title">
+    <span>📈 SPY Intraday — GEX Cloud</span>
+    <div class="gex-legend">
+      <div class="gex-legend-item"><div class="gex-legend-dot" style="background:rgba(0,208,132,0.6)"></div><span>Call GEX</span></div>
+      <div class="gex-legend-item"><div class="gex-legend-dot" style="background:rgba(255,51,85,0.6)"></div><span>Put GEX</span></div>
+      <div class="gex-legend-item"><div class="gex-legend-dot" style="background:#f5c842;height:2px;border-radius:0"></div><span>Gamma Flip</span></div>
+      <div class="gex-legend-item"><div class="gex-legend-dot" style="background:#4488ff;height:2px;border-radius:0"></div><span>Key Levels</span></div>
+    </div>
+  </div>
+  <div id="spy-chart" style="height:420px;width:100%"></div>
+  <div id="spy-chart-placeholder" style="height:420px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">
+    SPY chart loads during market hours (9:30 AM – 4:00 PM ET)
+  </div>
+</div>
 
   <!-- Row 1: GEX | OI | Position -->
   <div class="row row-3">
@@ -931,11 +983,172 @@ function poll() {
     buildPosition(d.open_positions);
     buildSignals(d);
     buildActivity(d.trades, d.last_action);
+    renderSPYChart(d);
   }).catch(function(e){ console.error('poll error', e); });
 }
 
 poll();
 setInterval(poll, 30000);
+
+let spyChartInitialized = false;
+
+function renderSPYChart(d) {
+  const candles = d.candles || [];
+  const gexStrikes = d.gex_by_strike || [];
+  const spot = d.spot;
+  const placeholder = document.getElementById('spy-chart-placeholder');
+  const chartDiv = document.getElementById('spy-chart');
+
+  if (!candles.length) {
+    placeholder.style.display = 'flex';
+    chartDiv.style.display = 'none';
+    return;
+  }
+
+  placeholder.style.display = 'none';
+  chartDiv.style.display = 'block';
+
+  // Candlestick trace
+  const times = candles.map(c => c.t);
+  const candleTrace = {
+    type: 'candlestick',
+    x: times,
+    open:  candles.map(c => c.o),
+    high:  candles.map(c => c.h),
+    low:   candles.map(c => c.l),
+    close: candles.map(c => c.c),
+    increasing: { line: { color: '#00d084', width: 1 }, fillcolor: '#00d084' },
+    decreasing: { line: { color: '#ff3355', width: 1 }, fillcolor: '#ff3355' },
+    name: 'SPY',
+    hovertemplate: '<b>%{x}</b><br>O:%{open} H:%{high} L:%{low} C:%{close}<extra></extra>',
+  };
+
+  // Volume trace (secondary y-axis, subtle)
+  const volTrace = {
+    type: 'bar',
+    x: times,
+    y: candles.map(c => c.v),
+    yaxis: 'y2',
+    marker: { color: candles.map(c => c.c >= c.o ? 'rgba(0,208,132,0.2)' : 'rgba(255,51,85,0.2)') },
+    name: 'Volume',
+    hoverinfo: 'skip',
+    showlegend: false,
+  };
+
+  // GEX cloud shapes — horizontal bands at heavy strikes
+  const shapes = [];
+  const annotations = [];
+
+  if (gexStrikes.length && spot) {
+    // Compute max GEX magnitude for opacity scaling
+    const maxGex = Math.max(...gexStrikes.map(s => Math.abs((s.call_gex || 0) + (s.put_gex || 0))));
+
+    // Top 12 strikes by total |GEX|
+    const topStrikes = [...gexStrikes]
+      .sort((a, b) => Math.abs((b.call_gex||0)+(b.put_gex||0)) - Math.abs((a.call_gex||0)+(a.put_gex||0)))
+      .slice(0, 12);
+
+    for (const s of topStrikes) {
+      const netGex = (s.call_gex || 0) + (s.put_gex || 0);
+      if (Math.abs(netGex) < 0.1) continue;
+      const opacity = 0.08 + 0.25 * (Math.abs(netGex) / maxGex);
+      const isCall = netGex > 0;
+      const color = isCall ? `rgba(0,208,132,${opacity})` : `rgba(255,51,85,${opacity})`;
+      const borderColor = isCall ? `rgba(0,208,132,${opacity + 0.1})` : `rgba(255,51,85,${opacity + 0.1})`;
+      const halfBand = Math.max(0.5, Math.abs(netGex) / maxGex * 2); // band width proportional to GEX
+      shapes.push({
+        type: 'rect',
+        xref: 'paper', yref: 'y',
+        x0: 0, x1: 1,
+        y0: s.strike - halfBand,
+        y1: s.strike + halfBand,
+        fillcolor: color,
+        line: { color: borderColor, width: 0.5 },
+        layer: 'below',
+      });
+      // Label the heaviest ones
+      const rank = topStrikes.indexOf(s);
+      if (rank < 5) {
+        annotations.push({
+          xref: 'paper', yref: 'y',
+          x: 1.001, y: s.strike,
+          text: `$${s.strike} (${netGex > 0 ? '+' : ''}${netGex.toFixed(1)}M)`,
+          showarrow: false,
+          xanchor: 'left',
+          font: { size: 9, color: isCall ? '#00d084' : '#ff3355', family: 'monospace' },
+        });
+      }
+    }
+  }
+
+  // Key level lines
+  const levelLines = [
+    { val: d.gamma_flip,  color: '#f5c842', dash: 'solid', width: 1.5, label: 'FLIP' },
+    { val: d.call_wall,   color: '#00d084', dash: 'dot',   width: 1,   label: 'CALL WALL' },
+    { val: d.put_wall,    color: '#ff3355', dash: 'dot',   width: 1,   label: 'PUT WALL' },
+    { val: d.max_pain,    color: '#4488ff', dash: 'dash',  width: 1,   label: 'MAX PAIN' },
+  ];
+
+  for (const lvl of levelLines) {
+    if (!lvl.val) continue;
+    shapes.push({
+      type: 'line',
+      xref: 'paper', yref: 'y',
+      x0: 0, x1: 1,
+      y0: lvl.val, y1: lvl.val,
+      line: { color: lvl.color, width: lvl.width, dash: lvl.dash },
+    });
+    annotations.push({
+      xref: 'paper', yref: 'y',
+      x: 0.01, y: lvl.val,
+      text: lvl.label,
+      showarrow: false,
+      yanchor: 'bottom',
+      font: { size: 8, color: lvl.color, family: 'monospace' },
+    });
+  }
+
+  const layout = {
+    paper_bgcolor: '#131720',
+    plot_bgcolor:  '#131720',
+    font: { family: 'monospace', color: '#c8ccd8', size: 10 },
+    margin: { l: 55, r: 100, t: 10, b: 40 },
+    xaxis: {
+      type: 'date',
+      gridcolor: '#1e2535',
+      tickformat: '%H:%M',
+      rangeslider: { visible: false },
+      color: '#556080',
+    },
+    yaxis: {
+      gridcolor: '#1e2535',
+      color: '#556080',
+      side: 'left',
+      tickformat: '$.2f',
+    },
+    yaxis2: {
+      overlaying: 'y',
+      side: 'right',
+      showgrid: false,
+      showticklabels: false,
+      range: [0, Math.max(...(d.candles||[]).map(c=>c.v||0)) * 8],
+    },
+    shapes,
+    annotations,
+    showlegend: false,
+    hovermode: 'x unified',
+    dragmode: 'zoom',
+  };
+
+  const cfg = { responsive: true, displayModeBar: false };
+
+  if (!spyChartInitialized) {
+    Plotly.newPlot('spy-chart', [candleTrace, volTrace], layout, cfg);
+    spyChartInitialized = true;
+  } else {
+    Plotly.react('spy-chart', [candleTrace, volTrace], layout, cfg);
+  }
+}
 </script>
 </body>
 </html>
