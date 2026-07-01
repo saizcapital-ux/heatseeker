@@ -730,5 +730,88 @@ def api_history():
 def api_ticker_status():
     return jsonify(_ticker_status)
 
+def _health_checks():
+    """Plain-English readiness checks for a live-trading deploy."""
+    g = _read_state()
+    checks = []
+
+    creds_ok = bool(os.getenv("RH_USERNAME") and os.getenv("RH_PASSWORD"))
+    checks.append({"name": "Robinhood credentials", "ok": creds_ok,
+                   "detail": "RH_USERNAME + RH_PASSWORD set" if creds_ok
+                             else "MISSING — set RH_USERNAME and RH_PASSWORD"})
+
+    logged_in = bool(_ticker_status.get("logged_in"))
+    checks.append({"name": "Robinhood login", "ok": logged_in,
+                   "detail": (f"logged in (last OK {_ticker_status.get('last_ok') or '—'})" if logged_in
+                              else f"NOT logged in — {_ticker_status.get('last_error') or 'click the device-approval email'}")})
+
+    sess_dir = os.getenv("RH_SESSION_DIR", "/data/rh_session")
+    sess_ok = (pathlib.Path(sess_dir, "heatseeker.pickle").exists()
+               or (pathlib.Path.home() / ".tokens" / "heatseeker.pickle").exists())
+    checks.append({"name": "Session persisted", "ok": sess_ok,
+                   "detail": f"token saved in {sess_dir}" if sess_ok
+                             else "no saved session — attach a Volume at /data so login survives restarts"})
+
+    src = g.get("gex_source"); gts = float(g.get("gex_ts") or 0)
+    worker_ok = (src == "robinhood") and (time.time() - gts < 1800)
+    checks.append({"name": "Worker → dashboard link", "ok": worker_ok,
+                   "detail": ("receiving live Robinhood scans from the worker" if worker_ok
+                              else "no recent worker scans — set WEB_URL on the worker "
+                                   "(dashboard is running on CBOE fallback for now)")})
+
+    spot = g.get("spot")
+    checks.append({"name": "Market data", "ok": bool(spot),
+                   "detail": (f"SPY ${spot} via {src or 'cboe'}" if spot else "no price yet")})
+
+    bal = g.get("balance")
+    checks.append({"name": "Agentic account", "ok": bool(bal),
+                   "detail": (f"#{AGENTIC_ACCOUNT} · ${bal} buying power" if bal
+                              else f"#{AGENTIC_ACCOUNT} · balance not loaded yet")})
+
+    dry = os.getenv("DRY_RUN", "false").lower() == "true"
+    checks.append({"name": "Trading mode", "ok": True,
+                   "detail": ("REAL MONEY — agentic account only" if not dry
+                              else "DRY-RUN (paper) — set DRY_RUN=false for live")})
+
+    checks.append({"name": "Last GEX scan", "ok": bool(g.get("market_updated")),
+                   "detail": g.get("market_updated") or "waiting for first scan"})
+
+    ready = creds_ok and logged_in
+    return {"ready": ready, "checks": checks,
+            "ts": datetime.now(ET).strftime("%H:%M:%S ET")}
+
+@app.route("/api/health")
+def api_health():
+    return jsonify(_health_checks())
+
+@app.route("/health")
+def health_page():
+    h = _health_checks()
+    rows = "".join(
+        f'<div class="row"><span class="ic {"ok" if c["ok"] else "no"}">'
+        f'{"✓" if c["ok"] else "✗"}</span><div><div class="nm">{c["name"]}</div>'
+        f'<div class="dt">{c["detail"]}</div></div></div>'
+        for c in h["checks"])
+    banner = ('<div class="ban ok">✅ Ready for live trading</div>' if h["ready"]
+              else '<div class="ban no">⚠️ Not ready — fix the ✗ items below</div>')
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HEATSEEKER — Health</title><meta http-equiv="refresh" content="15">
+<style>
+body{{background:#0a0c10;color:#c8ccd8;font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px 16px}}
+h1{{font-size:15px;letter-spacing:3px;color:#00d084}}
+.ban{{padding:14px;border-radius:12px;font-weight:700;font-size:15px;margin:16px 0;text-align:center}}
+.ban.ok{{background:rgba(0,208,132,.12);color:#00d084;border:1px solid rgba(0,208,132,.3)}}
+.ban.no{{background:rgba(255,59,92,.12);color:#ff3b5c;border:1px solid rgba(255,59,92,.3)}}
+.row{{display:flex;gap:12px;align-items:flex-start;background:#141824;border:1px solid #232a3d;border-radius:12px;padding:12px 14px;margin-bottom:8px}}
+.ic{{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}}
+.ic.ok{{background:rgba(0,208,132,.16);color:#00d084}} .ic.no{{background:rgba(255,59,92,.16);color:#ff3b5c}}
+.nm{{font-size:13px;font-weight:600}} .dt{{font-size:12px;color:#7683a0;margin-top:2px}}
+a{{color:#4488ff;font-size:12px}} .ts{{color:#4a5470;font-size:11px;text-align:center;margin-top:14px}}
+</style></head><body>
+<h1>HEATSEEKER · HEALTH</h1>{banner}{rows}
+<div class="ts">auto-refreshes every 15s · {h['ts']} · <a href="/">← dashboard</a></div>
+</body></html>"""
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
