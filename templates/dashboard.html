@@ -408,6 +408,10 @@ function computeEvents(hist, d){
       if(pa>0&&pb<=0) evs.push({t:b.t,cls:'crit',txt:'⚡ Spot crossed BELOW γ-flip $'+b.flip+' → negative-gamma (trending) regime'});
     }
     if(a.king&&b.king&&a.king!==b.king) evs.push({t:b.t,cls:'info',txt:'♛ King node migrated $'+a.king+' → $'+b.king});
+    if(a.spx&&b.spx&&a.spx!==b.spx){
+      if(b.spx==='DIVERGENT') evs.push({t:b.t,cls:'crit',txt:'⚠️ SPX real money DIVERGED — institutions now '+(b.spxdir||'').toUpperCase()+' vs SPY signal'});
+      else if(b.spx==='ALIGNED') evs.push({t:b.t,cls:'pos',txt:'✓ SPX real money RE-ALIGNED with SPY ('+(b.spxdir||'').toUpperCase()+')'});
+    }
     if(b.cw&&b.spot&&a.spot&&a.spot<=b.cw&&b.spot>b.cw) evs.push({t:b.t,cls:'warn',txt:'▲ Spot pierced Call Wall $'+b.cw});
     if(b.pw&&b.spot&&a.spot&&a.spot>=b.pw&&b.spot<b.pw) evs.push({t:b.t,cls:'warn',txt:'▼ Spot pierced Put Wall $'+b.pw});
     if(a.vix&&b.vix&&b.vix-a.vix>=1.5) evs.push({t:b.t,cls:'crit',txt:'📈 VIX spike +'+(b.vix-a.vix).toFixed(1)+' → '+b.vix});

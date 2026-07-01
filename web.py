@@ -215,6 +215,8 @@ def _refresh_cboe_gex():
     except Exception:
         pass
 
+    st = _read_state()
+
     # SPX "real-money" confirmation layer (institutional dealer gamma).
     spx_patch = {}
     try:
@@ -223,26 +225,33 @@ def _refresh_cboe_gex():
         sx = (spx_signal.confirmation(spy_dir, spy_spot=patch["spot"]) if spy_dir
               else spx_signal.compute(spy_spot=patch["spot"]))
         if sx:
-            lv = sx.get("levels_spy", {})
+            # Adaptive SPX/SPY ratio: EMA-smooth the instantaneous ratio so
+            # quote-timing jitter between the two feeds (and slow dividend/roll
+            # drift) don't wobble the translated levels.
+            instant = sx["ratio"]
+            prev = st.get("spx_ratio_ema")
+            ema = round(0.3 * instant + 0.7 * float(prev), 4) if prev else round(instant, 4)
+            def _sc(v):
+                return round(v / ema, 2) if v else None
             spx_patch = {
                 "spx_spot":          sx["spx_spot"],
-                "spx_ratio":         sx["ratio"],
+                "spx_ratio":         ema,
+                "spx_ratio_instant": round(instant, 4),
+                "spx_ratio_ema":     ema,
                 "spx_direction":     sx["direction"],
                 "spx_regime":        sx["regime"],
                 "spx_net_gex":       sx["net_gex"],
                 "spx_expiry":        sx.get("expiry"),
-                "spx_king_spy":      lv.get("king"),
-                "spx_flip_spy":      lv.get("gamma_flip"),
-                "spx_call_wall_spy": lv.get("call_wall"),
-                "spx_put_wall_spy":  lv.get("put_wall"),
-                "spx_max_pain_spy":  lv.get("max_pain"),
+                "spx_king_spy":      _sc(sx["king"]),
+                "spx_flip_spy":      _sc(sx["gamma_flip"]),
+                "spx_call_wall_spy": _sc(sx["call_wall"]),
+                "spx_put_wall_spy":  _sc(sx["put_wall"]),
+                "spx_max_pain_spy":  _sc(sx["max_pain"]),
                 "spx_confirm":       sx.get("label"),
                 "spx_confirm_mult":  sx.get("mult"),
             }
     except Exception as e:
         log.debug(f"SPX signal failed: {e}")
-
-    st = _read_state()
     rh_fresh = st.get("gex_source") == "robinhood" and (now - float(st.get("gex_ts") or 0) < CBOE_RH_FRESH_SEC)
     if rh_fresh:
         # Robinhood scan owns the GEX picture right now — only touch price/VIX/SPX.
@@ -289,10 +298,14 @@ def _append_history(state):
             "vix": state.get("vix"),
             "dir": state.get("direction"),
             "conf": state.get("confidence"),
+            "spx": state.get("spx_confirm"),
+            "spxdir": state.get("spx_direction"),
         }
+        spx_confirm = state.get("spx_confirm")
         last = hist[-1] if hist else None
         if (last and now - last.get("_ts", 0) < HIST_SAMPLE_SEC
-                and last.get("flip") == flip and last.get("king") == king):
+                and last.get("flip") == flip and last.get("king") == king
+                and last.get("spx") == spx_confirm):
             # same regime snapshot — just refresh spot/time on the last point
             last.update({"spot": pt["spot"], "t": pt["t"], "_ts": now, "vix": pt["vix"]})
         else:
@@ -639,6 +652,7 @@ def api_state():
         "gex_expiry":     g.get("gex_expiry"),
         "spx_spot":       g.get("spx_spot"),
         "spx_ratio":      g.get("spx_ratio"),
+        "spx_ratio_instant": g.get("spx_ratio_instant"),
         "spx_direction":  g.get("spx_direction"),
         "spx_regime":     g.get("spx_regime"),
         "spx_net_gex":    g.get("spx_net_gex"),
