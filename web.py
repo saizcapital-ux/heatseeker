@@ -283,6 +283,39 @@ def _refresh_cboe_gex():
         _write_state(patch)
         log.info(f"CBOE GEX written: {patch['direction'].upper()} king=${patch['king_strike']:.0f} flip=${patch['gamma_flip']:.0f} strikes={len(patch['strike_ladder'])}")
 
+_yf_candle_last = 0
+def _refresh_yf_candles(force=False):
+    """Keyless intraday candles (yfinance, incl. pre/post) so the chart fills in
+    even while a Robinhood login is pending device approval (which blocks the
+    RH data path). Throttled; skipped once RH candles are flowing."""
+    global _yf_candle_last
+    now = time.time()
+    if not force and now - _yf_candle_last < 120:
+        return
+    _yf_candle_last = now
+    try:
+        import yfinance as yf
+        df = yf.Ticker("SPY").history(period="1d", interval="5m", prepost=True)
+        candles = []
+        for idx, row in df.iterrows():
+            o, h, l, c = row.get("Open"), row.get("High"), row.get("Low"), row.get("Close")
+            if not (o and h and l and c) or o != o:   # skip NaN/zero rows
+                continue
+            try:
+                et = idx.tz_convert(ET)
+            except Exception:
+                et = idx
+            m = et.hour * 60 + et.minute
+            sess = "reg" if 570 <= m < 960 else ("pre" if m < 570 else "post")
+            candles.append({"t": idx.isoformat(), "o": round(float(o), 2), "h": round(float(h), 2),
+                            "l": round(float(l), 2), "c": round(float(c), 2),
+                            "v": int(row.get("Volume") or 0), "s": sess})
+        if candles:
+            _write_state({"candles": candles})
+            log.info(f"yfinance candles (pre-login): {len(candles)} bars")
+    except Exception as e:
+        log.debug(f"yfinance candle refresh failed: {e}")
+
 def _append_history(state):
     """Record an intraday time-series point so the dashboard can show the gamma
     flip / king node migrating relative to spot through the day (the core 0DTE
@@ -350,6 +383,10 @@ def _ticker():
             _refresh_cboe_gex()
         except Exception as e:
             log.debug(f"CBOE refresh error: {e}")
+        # Fill candles from a keyless source before the (possibly blocking) RH
+        # login, so the chart isn't empty while device approval is pending.
+        if not logged_in:
+            _refresh_yf_candles()
         try:
             import robin_stocks.robinhood as rh
             if not logged_in:
