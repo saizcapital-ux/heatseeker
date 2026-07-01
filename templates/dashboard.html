@@ -552,10 +552,9 @@ function renderMainChart(d){
 }
 
 function renderCloud(d){
-  setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.6)"></i>+GEX pin</span><span><i class="lg-dot" style="background:rgba(255,51,85,.6)"></i>−GEX trend</span><span><i class="lg-line" style="border-color:'+C.yellow+'"></i>γ flip</span><span><i class="lg-line" style="border-color:'+C.orange+'"></i>king</span><span><i class="lg-line" style="border-color:'+C.purple+';border-style:dashed"></i>SPX levels</span>');
+  setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.55)"></i>+GEX (pin)</span><span><i class="lg-dot" style="background:rgba(255,51,85,.55)"></i>−GEX (trend)</span><span style="opacity:.4">│</span><span style="color:'+C.text+'">SPY levels</span><span style="color:'+C.purple+'">◆ SPX (real money)</span>');
   var candles=d.candles||[], gex=d.gex_by_strike||[], spot=d.spot, hist=lastHistory||[];
   var ph=document.getElementById('chart-ph'), ch=document.getElementById('main-chart');
-  // Only truly blank if we have neither a price nor any GEX structure.
   if(!candles.length && !gex.length && !spot){
     ph.style.display='flex'; ph.innerHTML='Waiting for first data pull…<br><span style="font-size:9px">CBOE GEX loads within ~5 min</span>'; ch.style.display='none'; return;
   }
@@ -564,47 +563,94 @@ function renderCloud(d){
   var bandRef = spot;
   if(!bandRef && gex.length){ var ss=gex.map(function(s){return s.strike;}).sort(function(a,b){return a-b;}); bandRef=ss[Math.floor(ss.length/2)]; }
 
-  // Shared GEX bands + key-level lines (work with or without a price series).
-  var shapes=[],annos=[],yvals=[];
+  var shapes=[], annos=[];
+
+  // ── Subtle GEX bands (kept light so candles stay readable) ──
   if(gex.length&&bandRef){
     var win=gex.filter(function(s){return Math.abs(s.strike-bandRef)<=16;}), mg=0;
     win.forEach(function(s){var m=Math.abs(s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0));if(m>mg)mg=m;}); if(!mg)mg=1;
-    win.forEach(function(s){ yvals.push(s.strike); var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0); if(Math.abs(net)<0.02)return;
-      var op=0.05+0.30*(Math.abs(net)/mg), half=Math.max(0.35,Math.abs(net)/mg*1.6);
+    win.forEach(function(s){ var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0); if(Math.abs(net)<0.03)return;
+      var op=0.04+0.18*(Math.abs(net)/mg), half=Math.max(0.3,Math.abs(net)/mg*1.4);
       shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:s.strike-half,y1:s.strike+half,fillcolor:(net>0?'rgba(0,208,132,':'rgba(255,51,85,')+op+')',line:{width:0},layer:'below'});});
   }
-  if(spot) yvals.push(spot);
-  [{v:d.king_strike,c:C.orange,dash:'solid',w:2,l:'KING ♛'},{v:d.gamma_flip,c:C.yellow,dash:'solid',w:1.5,l:'γ FLIP'},{v:d.call_wall,c:C.green,dash:'dot',w:1,l:'CALL WALL'},{v:d.put_wall,c:C.red,dash:'dot',w:1,l:'PUT WALL'},{v:d.max_pain,c:C.blue,dash:'dash',w:1,l:'MAX PAIN'},
-   {v:d.spx_flip_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX γFLIP',right:1},{v:d.spx_king_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX KING',right:1},{v:d.spx_call_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX C.WALL',right:1},{v:d.spx_put_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX P.WALL',right:1},{v:d.spx_max_pain_spy,c:C.purple,dash:'dot',w:1,l:'SPX PAIN',right:1}].forEach(function(ln){
-    if(!ln.v)return; yvals.push(ln.v); shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:ln.v,y1:ln.v,line:{color:ln.c,width:ln.w,dash:ln.dash}});
-    annos.push({xref:'paper',yref:'y',x:(ln.right?0.994:0.006),y:ln.v,text:ln.l,showarrow:false,xanchor:(ln.right?'right':'left'),yanchor:'bottom',font:{size:8,color:ln.c,family:'monospace'}});});
 
-  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:48,r:10,t:6,b:32},
-    yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
+  // ── Key levels ──
+  var levels=[];
+  function addLvl(v,c,l,w,dash){ if(v) levels.push({y:+v,c:c,l:l,w:w,dash:dash}); }
+  addLvl(d.king_strike,C.orange,'KING ♛',2,'solid');
+  addLvl(d.gamma_flip,C.yellow,'γ FLIP',1.5,'solid');
+  addLvl(d.call_wall,C.green,'CALL WALL',1,'dot');
+  addLvl(d.put_wall,C.red,'PUT WALL',1,'dot');
+  addLvl(d.max_pain,C.blue,'MAX PAIN',1,'dash');
+  addLvl(d.spx_flip_spy,C.purple,'SPX FLIP ◆',1.5,'dashdot');
+  addLvl(d.spx_king_spy,C.purple,'SPX KING ◆',1.5,'dashdot');
+  addLvl(d.spx_call_wall_spy,C.purple,'SPX C·WALL ◆',1,'dot');
+  addLvl(d.spx_put_wall_spy,C.purple,'SPX P·WALL ◆',1,'dot');
+  addLvl(d.spx_max_pain_spy,C.purple,'SPX PAIN ◆',1,'dot');
+
+  function tag(y,c,txt,solidBg){
+    return {xref:'paper',yref:'y',x:1.006,xanchor:'left',y:y,yanchor:'middle',text:txt,showarrow:false,align:'left',
+      font:{size:9,color:solidBg?'#0a0c10':c,family:'monospace'},
+      bgcolor:solidBg||'rgba(10,12,16,.80)',bordercolor:c,borderwidth:1,borderpad:3};
+  }
+  // Draw level lines + a collision-avoided tag gutter on the right, clamping
+  // off-screen levels to the edge with ↑/↓ so nothing silently disappears.
+  function drawLevels(yLo,yHi){
+    var range=(yHi-yLo)||1, minGap=range*0.052;
+    levels.forEach(function(L){ if(L.y>=yLo&&L.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:L.y,y1:L.y,line:{color:L.c,width:L.w,dash:L.dash}}); });
+    if(spot&&spot>=yLo&&spot<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
+    var inr=levels.filter(function(L){return L.y>=yLo&&L.y<=yHi;}).slice().sort(function(a,b){return b.y-a.y;});
+    var lastY=Infinity;
+    inr.forEach(function(L){ var ty=L.y; if(lastY-ty<minGap) ty=lastY-minGap; L._ty=ty; lastY=ty; });
+    if(inr.length){ var minTy=inr[inr.length-1]._ty; if(minTy<yLo){ var sh=yLo-minTy; inr.forEach(function(L){L._ty+=sh;}); } }
+    inr.forEach(function(L){ annos.push(tag(L._ty,L.c,L.l+' '+Math.round(L.y))); });
+    if(spot&&spot>=yLo&&spot<=yHi) annos.push(tag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
+    // Off-screen levels: clamp to the edge and stack (down from top / up from bottom) so they never overlap.
+    var above=levels.filter(function(L){return L.y>yHi;}).sort(function(a,b){return b.y-a.y;}), ay=yHi;
+    above.forEach(function(L){ annos.push(tag(ay,L.c,'↑ '+L.l+' '+Math.round(L.y))); ay-=minGap; });
+    var below=levels.filter(function(L){return L.y<yLo;}).sort(function(a,b){return a.y-b.y;}), by=yLo;
+    below.forEach(function(L){ annos.push(tag(by,L.c,'↓ '+L.l+' '+Math.round(L.y))); by+=minGap; });
+  }
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:56,r:104,t:14,b:34},
+    yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',zeroline:false},shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
   var traces;
 
   if(candles.length){
-    // Full intraday candlesticks + volume.
     var times=candles.map(function(c){return c.t;});
     var cT={type:'candlestick',x:times,open:candles.map(function(c){return c.o;}),high:candles.map(function(c){return c.h;}),low:candles.map(function(c){return c.l;}),close:candles.map(function(c){return c.c;}),
       increasing:{line:{color:C.green,width:1},fillcolor:C.green},decreasing:{line:{color:C.red,width:1},fillcolor:C.red},name:'SPY',hovertemplate:'<b>%{x|%H:%M}</b> O:%{open:.2f} H:%{high:.2f} L:%{low:.2f} C:%{close:.2f}<extra></extra>'};
     var vols=candles.map(function(c){return c.v||0;}), mv=Math.max.apply(null,vols)||1;
-    var vT={type:'bar',x:times,y:vols,yaxis:'y2',marker:{color:candles.map(function(c){return c.c>=c.o?'rgba(0,208,132,.16)':'rgba(255,51,85,.16)';})},hoverinfo:'skip',showlegend:false};
-    layout.xaxis={type:'date',gridcolor:C.border,tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted};
+    var vT={type:'bar',x:times,y:vols,yaxis:'y2',marker:{color:candles.map(function(c){return c.c>=c.o?'rgba(0,208,132,.14)':'rgba(255,51,85,.14)';})},hoverinfo:'skip',showlegend:false};
+    var lows=candles.map(function(c){return c.l;}), highs=candles.map(function(c){return c.h;});
+    var yLo=Math.min.apply(null,lows), yHi=Math.max.apply(null,highs);
+    if(spot){yLo=Math.min(yLo,spot);yHi=Math.max(yHi,spot);}
+    var pad=((yHi-yLo)*0.12)||1; yLo-=pad; yHi+=pad;
+    layout.xaxis={type:'date',gridcolor:'rgba(28,32,48,.55)',tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted};
+    layout.yaxis.range=[yLo,yHi];
     layout.yaxis2={overlaying:'y',side:'right',showgrid:false,showticklabels:false,range:[0,mv*8]};
+    drawLevels(yLo,yHi);
     traces=[cT,vT];
   } else if(hist.length>=2){
-    // No candles (RH offline) → draw the intraday spot PATH over the gamma bands.
     var hx=hist.map(function(p){return p.t;});
+    var sp=hist.map(function(p){return p.spot;}).filter(Boolean);
+    var yLo=Math.min.apply(null,sp), yHi=Math.max.apply(null,sp); if(spot){yLo=Math.min(yLo,spot);yHi=Math.max(yHi,spot);}
+    var pad=((yHi-yLo)*0.18)||1; yLo-=pad; yHi+=pad;
     traces=[{type:'scatter',mode:'lines',x:hx,y:hist.map(function(p){return p.spot;}),line:{color:'#fff',width:2},name:'Spot',hovertemplate:'%{x} spot %{y:.2f}<extra></extra>'}];
-    layout.xaxis={type:'category',gridcolor:C.border,color:C.muted,nticks:8};
+    layout.xaxis={type:'category',gridcolor:'rgba(28,32,48,.55)',color:C.muted,nticks:8};
+    layout.yaxis.range=[yLo,yHi];
+    drawLevels(yLo,yHi);
   } else {
-    // Only a snapshot → show the GEX map with a horizontal spot line, y-ranged to the ladder.
-    if(spot) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
-    traces=[{type:'scatter',mode:'markers',x:[0.5],y:[spot||bandRef],marker:{color:'#fff',size:6},hoverinfo:'skip',showlegend:false}];
+    var ys=[]; if(gex.length&&bandRef){ gex.filter(function(s){return Math.abs(s.strike-bandRef)<=16;}).forEach(function(s){ys.push(s.strike);}); }
+    if(spot)ys.push(spot);
+    levels.forEach(function(L){ if(bandRef&&Math.abs(L.y-bandRef)<=18) ys.push(L.y); });
+    if(!ys.length && bandRef) ys=[bandRef-10,bandRef+10];
+    var yLo=Math.min.apply(null,ys), yHi=Math.max.apply(null,ys); var pad=((yHi-yLo)*0.10)||1; yLo-=pad; yHi+=pad;
+    traces=[{type:'scatter',mode:'markers',x:[0.5],y:[spot||bandRef],marker:{color:'#fff',size:7},hoverinfo:'skip',showlegend:false}];
     layout.xaxis={visible:false,range:[0,1]};
-    if(yvals.length){ var mn=Math.min.apply(null,yvals)-1, mx=Math.max.apply(null,yvals)+1; layout.yaxis.range=[mn,mx]; }
-    layout.annotations.push({xref:'paper',yref:'paper',x:0.5,y:0.5,text:'snapshot — intraday path builds as scans run',showarrow:false,font:{size:9,color:C.muted,family:'monospace'}});
+    layout.yaxis.range=[yLo,yHi];
+    drawLevels(yLo,yHi);
+    layout.annotations.push({xref:'paper',yref:'paper',x:0.5,y:0.04,text:'snapshot — intraday candles build as the day runs',showarrow:false,font:{size:9,color:C.muted,family:'monospace'}});
   }
   plot(traces,layout,'cloud');
 }
