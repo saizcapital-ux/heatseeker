@@ -551,6 +551,25 @@ function renderMainChart(d){
   else renderProfile(d);
 }
 
+// Shared right-margin tag gutter: colored price pills, collision-avoided, with
+// off-screen levels clamped to the edge (↑/↓) and stacked. Used by all 3 charts.
+function gexTag(y,c,txt,solidBg){
+  return {xref:'paper',yref:'y',x:1.006,xanchor:'left',y:y,yanchor:'middle',text:txt,showarrow:false,align:'left',
+    font:{size:9,color:solidBg?'#0a0c10':c,family:'monospace'},bgcolor:solidBg||'rgba(10,12,16,.80)',bordercolor:c,borderwidth:1,borderpad:3};
+}
+function placeTags(annos,items,yLo,yHi){
+  var range=(yHi-yLo)||1, minGap=range*0.052;
+  var inr=items.filter(function(it){return it.y>=yLo&&it.y<=yHi;}).slice().sort(function(a,b){return b.y-a.y;});
+  var lastY=Infinity;
+  inr.forEach(function(it){ var ty=it.y; if(lastY-ty<minGap) ty=lastY-minGap; it._ty=ty; lastY=ty; });
+  if(inr.length){ var minTy=inr[inr.length-1]._ty; if(minTy<yLo){ var sh=yLo-minTy; inr.forEach(function(it){it._ty+=sh;}); } }
+  inr.forEach(function(it){ annos.push(gexTag(it._ty,it.c,it.text,it.solidBg)); });
+  var above=items.filter(function(it){return it.y>yHi;}).sort(function(a,b){return b.y-a.y;}), ay=yHi;
+  above.forEach(function(it){ annos.push(gexTag(ay,it.c,'↑ '+it.text,it.solidBg)); ay-=minGap; });
+  var below=items.filter(function(it){return it.y<yLo;}).sort(function(a,b){return a.y-b.y;}), by=yLo;
+  below.forEach(function(it){ annos.push(gexTag(by,it.c,'↓ '+it.text,it.solidBg)); by+=minGap; });
+}
+
 function renderCloud(d){
   setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.55)"></i>+GEX (pin)</span><span><i class="lg-dot" style="background:rgba(255,51,85,.55)"></i>−GEX (trend)</span><span style="opacity:.4">│</span><span style="color:'+C.text+'">SPY levels</span><span style="color:'+C.purple+'">◆ SPX (real money)</span>');
   var candles=d.candles||[], gex=d.gex_by_strike||[], spot=d.spot, hist=lastHistory||[];
@@ -588,28 +607,12 @@ function renderCloud(d){
   addLvl(d.spx_put_wall_spy,C.purple,'SPX P·WALL ◆',1,'dot');
   addLvl(d.spx_max_pain_spy,C.purple,'SPX PAIN ◆',1,'dot');
 
-  function tag(y,c,txt,solidBg){
-    return {xref:'paper',yref:'y',x:1.006,xanchor:'left',y:y,yanchor:'middle',text:txt,showarrow:false,align:'left',
-      font:{size:9,color:solidBg?'#0a0c10':c,family:'monospace'},
-      bgcolor:solidBg||'rgba(10,12,16,.80)',bordercolor:c,borderwidth:1,borderpad:3};
-  }
-  // Draw level lines + a collision-avoided tag gutter on the right, clamping
-  // off-screen levels to the edge with ↑/↓ so nothing silently disappears.
+  // Draw level lines + the shared collision-avoided right-gutter tags.
   function drawLevels(yLo,yHi){
-    var range=(yHi-yLo)||1, minGap=range*0.052;
     levels.forEach(function(L){ if(L.y>=yLo&&L.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:L.y,y1:L.y,line:{color:L.c,width:L.w,dash:L.dash}}); });
     if(spot&&spot>=yLo&&spot<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
-    var inr=levels.filter(function(L){return L.y>=yLo&&L.y<=yHi;}).slice().sort(function(a,b){return b.y-a.y;});
-    var lastY=Infinity;
-    inr.forEach(function(L){ var ty=L.y; if(lastY-ty<minGap) ty=lastY-minGap; L._ty=ty; lastY=ty; });
-    if(inr.length){ var minTy=inr[inr.length-1]._ty; if(minTy<yLo){ var sh=yLo-minTy; inr.forEach(function(L){L._ty+=sh;}); } }
-    inr.forEach(function(L){ annos.push(tag(L._ty,L.c,L.l+' '+Math.round(L.y))); });
-    if(spot&&spot>=yLo&&spot<=yHi) annos.push(tag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
-    // Off-screen levels: clamp to the edge and stack (down from top / up from bottom) so they never overlap.
-    var above=levels.filter(function(L){return L.y>yHi;}).sort(function(a,b){return b.y-a.y;}), ay=yHi;
-    above.forEach(function(L){ annos.push(tag(ay,L.c,'↑ '+L.l+' '+Math.round(L.y))); ay-=minGap; });
-    var below=levels.filter(function(L){return L.y<yLo;}).sort(function(a,b){return a.y-b.y;}), by=yLo;
-    below.forEach(function(L){ annos.push(tag(by,L.c,'↓ '+L.l+' '+Math.round(L.y))); by+=minGap; });
+    placeTags(annos, levels.map(function(L){return {y:L.y,c:L.c,text:L.l+' '+Math.round(L.y)};}), yLo,yHi);
+    if(spot&&spot>=yLo&&spot<=yHi) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
   }
 
   var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:56,r:104,t:14,b:34},
@@ -670,9 +673,21 @@ function renderMigration(d){
   var shapes=[];
   for(var i=1;i<h.length;i++){ var a=h[i-1],b=h[i]; if(a.flip==null||b.flip==null)continue;
     var pos=(b.spot>=b.flip); shapes.push({type:'rect',xref:'x',yref:'paper',x0:a.t,x1:b.t,y0:0,y1:1,fillcolor:pos?'rgba(0,208,132,.05)':'rgba(255,51,85,.05)',line:{width:0},layer:'below'}); }
-  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:48,r:10,t:6,b:34},
-    xaxis:{type:'category',gridcolor:C.border,color:C.muted,nticks:8},yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},
-    shapes:shapes,showlegend:true,legend:{orientation:'h',y:1.06,font:{size:8,color:C.muted},bgcolor:'rgba(0,0,0,0)'},hovermode:'x unified',dragmode:'zoom'};
+
+  // Frame the y-axis to the data and tag each line's CURRENT value on the right.
+  var allY=[]; h.forEach(function(p){ ['spot','flip','king','cw','pw'].forEach(function(k){ if(p[k]!=null) allY.push(p[k]); }); });
+  var yLo=Math.min.apply(null,allY), yHi=Math.max.apply(null,allY); var pad=((yHi-yLo)*0.08)||1; yLo-=pad; yHi+=pad;
+  var lp=h[h.length-1], annos=[], items=[];
+  if(lp.pw!=null)   items.push({y:lp.pw,   c:C.red,   text:'P.WALL '+Math.round(lp.pw)});
+  if(lp.cw!=null)   items.push({y:lp.cw,   c:C.green, text:'C.WALL '+Math.round(lp.cw)});
+  if(lp.king!=null) items.push({y:lp.king, c:C.orange,text:'KING '+Math.round(lp.king)});
+  if(lp.flip!=null) items.push({y:lp.flip, c:C.yellow,text:'γ FLIP '+Math.round(lp.flip)});
+  placeTags(annos,items,yLo,yHi);
+  if(lp.spot!=null) annos.push(gexTag(lp.spot,'#fff','● SPY '+lp.spot.toFixed(2),'#fff'));
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:56,r:104,t:14,b:34},
+    xaxis:{type:'category',gridcolor:'rgba(28,32,48,.55)',color:C.muted,nticks:8},yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi]},
+    shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
   plot([cwT,pwT,kingT,flipT,spotT],layout,'migration');
 }
 
@@ -688,16 +703,22 @@ function renderProfile(d){
   var barT={type:'bar',orientation:'h',y:strikes,x:net,marker:{color:net.map(function(v){return v>=0?'rgba(0,208,132,.7)':'rgba(255,51,85,.7)';})},name:'net GEX',hovertemplate:'$%{y} · %{x:.2f}M<extra></extra>'};
   var cumT={type:'scatter',mode:'lines+markers',y:strikes,x:cum,xaxis:'x2',line:{color:'#fff',width:1.5},marker:{size:3,color:'#fff'},name:'cumulative',hovertemplate:'$%{y} cum %{x:.1f}M<extra></extra>'};
   var shapes=[];
-  if(spot)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1,dash:'dash'}});
+  if(spot)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5,dash:'dash'}});
   if(d.gamma_flip)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.gamma_flip,y1:d.gamma_flip,line:{color:C.yellow,width:1.5}});
   if(d.king_strike)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.king_strike,y1:d.king_strike,line:{color:C.orange,width:1,dash:'dot'}});
-  var annos=[];
-  if(d.gamma_flip)annos.push({xref:'paper',x:0.01,y:d.gamma_flip,yref:'y',text:'γ FLIP $'+d.gamma_flip,showarrow:false,yanchor:'bottom',font:{size:8,color:C.yellow,family:'monospace'}});
-  if(spot)annos.push({xref:'paper',x:0.99,y:spot,yref:'y',text:'SPOT $'+spot,showarrow:false,xanchor:'right',yanchor:'bottom',font:{size:8,color:'#fff',family:'monospace'}});
-  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:48,r:10,t:6,b:30},
-    xaxis:{gridcolor:C.border,color:C.muted,zeroline:true,zerolinecolor:C.muted,title:{text:'net GEX / strike ($M)',font:{size:8,color:C.muted}}},
+
+  // Shared right-gutter tags for the key strikes.
+  var yLo=Math.min.apply(null,strikes), yHi=Math.max.apply(null,strikes); var pad=((yHi-yLo)*0.04)||1; yLo-=pad; yHi+=pad;
+  var annos=[], items=[];
+  if(d.gamma_flip) items.push({y:d.gamma_flip,c:C.yellow,text:'γ FLIP '+Math.round(d.gamma_flip)});
+  if(d.king_strike)items.push({y:d.king_strike,c:C.orange,text:'KING '+Math.round(d.king_strike)});
+  placeTags(annos,items,yLo,yHi);
+  if(spot) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:56,r:104,t:16,b:32},
+    xaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,zeroline:true,zerolinecolor:C.muted,title:{text:'net GEX / strike ($M)',font:{size:8,color:C.muted}}},
     xaxis2:{overlaying:'x',side:'top',color:'rgba(255,255,255,.5)',showgrid:false,zeroline:false},
-    yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},shapes:shapes,annotations:annos,showlegend:false,hovermode:'closest',bargap:0.15};
+    yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi]},shapes:shapes,annotations:annos,showlegend:false,hovermode:'closest',bargap:0.15};
   plot([barT,cumT],layout,'profile');
 }
 
