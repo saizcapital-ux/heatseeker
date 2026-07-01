@@ -48,13 +48,20 @@ def post_tweet(text):
         return None
 
 
+SETUP_TAG = {
+    "dip_buy":  "🎯 dip-buy (put-wall bounce)",
+    "rip_fade": "🎯 rip-fade (call-wall fade)",
+    "gex_signal": "GEX signal",
+}
+
 def tweet_entry(*, direction, strike, price, king_strike=None, gamma_flip=None,
-                confidence=None, spot=None):
+                confidence=None, spot=None, setup="gex_signal"):
     """Compose + post an entry signal."""
     side = "CALL" if str(direction).lower().startswith("c") else "PUT"
     emoji = "🟢📈" if side == "CALL" else "🔴📉"
     lines = [f"{emoji} HEATSEEKER 0DTE ENTRY",
-             f"BUY SPY ${int(strike)} {side} @ ${price:.2f}"]
+             f"BUY SPY ${int(strike)} {side} @ ${price:.2f}",
+             SETUP_TAG.get(setup, setup)]
     ctx = []
     if spot:        ctx.append(f"spot ${spot:.2f}")
     if king_strike: ctx.append(f"king ${int(king_strike)}")

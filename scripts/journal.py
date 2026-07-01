@@ -61,7 +61,7 @@ def _git_push():
 
 def log_entry(symbol, opt_type, strike, expiry, contracts, entry_price,
               vix, king_strike, king_gex, direction, balance_before,
-              gex_features=None, confidence=None):
+              gex_features=None, confidence=None, setup="gex_signal"):
     data = load()
     trade = {
         "id":             f"{date.today()}_{strike}_{opt_type}",
@@ -81,6 +81,7 @@ def log_entry(symbol, opt_type, strike, expiry, contracts, entry_price,
         "king_strike":    king_strike,
         "king_gex_m":     round(king_gex / 1e6, 2),
         "direction":      direction,
+        "setup":          setup,   # gex_signal | dip_buy | rip_fade
         "balance_before": round(balance_before, 2),
         "balance_after":  None,
         "gex_features":   gex_features,

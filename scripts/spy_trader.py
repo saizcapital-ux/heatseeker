@@ -696,6 +696,7 @@ def main():
         direction, target, pool = "call", king_strike + 1, calls
     else:
         direction, target, pool = "put", king_strike - 1, puts
+    setup = "gex_signal"   # which procedure produced this entry (for journal + X tag)
     log.info(f"DIRECTION: {direction.upper()} -> target {target}")
 
     # GEX pattern analysis + dealer flow (needed by the dip-buy override below)
@@ -723,12 +724,15 @@ def main():
                 _best, max_pain = _pay, _k
         _vix_prev = get_vix_prev_close()
         _vix_calm = (_vix_prev is None) or (vix <= _vix_prev * 1.02)
+        _concentration = gex_features.get("gex_concentration", 0) or 0
         if (cw and (cw - RIP_FADE_NEAR) <= spot <= (cw + RIP_FADE_MAX_BREAK)   # AT the call wall
                 and max_pain and (spot - max_pain) >= RIP_FADE_MIN_ROOM        # extended above the pin
                 and _vix_calm                                                  # vol flat/falling
-                and king_gex >= 0):                                           # positive gamma → pinning
+                and king_gex >= 0                                              # positive gamma → pinning
+                and _concentration >= 0.20):                                  # a GENUINE pin (skill PIN regime)
             direction, pool, target = "put", puts, int(round(spot)) - 1
             rip_fade = True
+            setup = "rip_fade"
             log.info(f"RIP-FADE OVERRIDE: SPY ${spot:.2f} AT call wall ${cw:.0f}, extended "
                      f"${spot-max_pain:.1f} above max pain ${max_pain:.0f}, VIX calm → fade DOWN "
                      f"with PUT (target {target})")
@@ -749,6 +753,7 @@ def main():
             and vix_calm                                       # vol flat/falling, not risk-off
         )
         if dip_ok:
+            setup = "dip_buy"
             log.info(f"GATE 5 DIP-BUY OVERRIDE: SPY ${spot:.2f} below prev ${prev_close:.2f} but "
                      f"positive gamma + above put wall ${put_wall:.0f} + VIX calm "
                      f"({vix:.1f}<=~{(vix_prev or vix):.1f}) → buy the dip")
@@ -913,12 +918,17 @@ def main():
     delta = contract.get("delta", 0)
     total = ask * 100 * qty
 
+    setup_label = {"dip_buy": "DIP-BUY (put-wall bounce)",
+                   "rip_fade": "RIP-FADE (call-wall fade)",
+                   "gex_signal": "GEX signal"}.get(setup, setup)
+
     place_order(contract, expiration, direction, qty)
     write_gex_state({
-        "last_action": f"{'[DRY RUN] ' if DRY_RUN else ''}ORDER PLACED: BUY {qty}x SPY {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}",
+        "last_action": f"{'[DRY RUN] ' if DRY_RUN else ''}ORDER PLACED [{setup_label}]: BUY {qty}x SPY {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}",
         "confidence": confidence,
         "entry_strike": float(contract["strike_price"]),
         "entry_price": ask, "entry_qty": qty,
+        "entry_setup": setup,
         **spx_state,
     })
 
@@ -929,13 +939,13 @@ def main():
             contracts=qty, entry_price=ask,
             vix=vix, king_strike=king_strike, king_gex=king_gex,
             direction=direction, balance_before=balance,
-            gex_features=gex_features, confidence=confidence,
+            gex_features=gex_features, confidence=confidence, setup=setup,
         )
         try:
             from scripts.social import tweet_entry
             tweet_entry(direction=direction, strike=float(contract["strike_price"]),
                         price=ask, king_strike=king_strike, gamma_flip=gamma_flip,
-                        confidence=confidence, spot=spot)
+                        confidence=confidence, spot=spot, setup=setup)
         except Exception as te:
             log.warning(f"Entry tweet failed (non-fatal): {te}")
 
