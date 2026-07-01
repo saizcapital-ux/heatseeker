@@ -215,16 +215,45 @@ def _refresh_cboe_gex():
     except Exception:
         pass
 
+    # SPX "real-money" confirmation layer (institutional dealer gamma).
+    spx_patch = {}
+    try:
+        import scripts.spx_signal as spx_signal
+        spy_dir = patch.get("direction")
+        sx = (spx_signal.confirmation(spy_dir, spy_spot=patch["spot"]) if spy_dir
+              else spx_signal.compute(spy_spot=patch["spot"]))
+        if sx:
+            lv = sx.get("levels_spy", {})
+            spx_patch = {
+                "spx_spot":          sx["spx_spot"],
+                "spx_ratio":         sx["ratio"],
+                "spx_direction":     sx["direction"],
+                "spx_regime":        sx["regime"],
+                "spx_net_gex":       sx["net_gex"],
+                "spx_expiry":        sx.get("expiry"),
+                "spx_king_spy":      lv.get("king"),
+                "spx_flip_spy":      lv.get("gamma_flip"),
+                "spx_call_wall_spy": lv.get("call_wall"),
+                "spx_put_wall_spy":  lv.get("put_wall"),
+                "spx_max_pain_spy":  lv.get("max_pain"),
+                "spx_confirm":       sx.get("label"),
+                "spx_confirm_mult":  sx.get("mult"),
+            }
+    except Exception as e:
+        log.debug(f"SPX signal failed: {e}")
+
     st = _read_state()
     rh_fresh = st.get("gex_source") == "robinhood" and (now - float(st.get("gex_ts") or 0) < CBOE_RH_FRESH_SEC)
     if rh_fresh:
-        # Robinhood scan owns the GEX picture right now — only touch price/VIX.
+        # Robinhood scan owns the GEX picture right now — only touch price/VIX/SPX.
         thin = {"spot": patch["spot"]}
         if "vix" in patch:
             thin["vix"] = patch["vix"]
+        thin.update(spx_patch)
         _write_state(thin)
-        log.info(f"CBOE tick (RH authoritative): SPY={patch['spot']}")
+        log.info(f"CBOE tick (RH authoritative): SPY={patch['spot']} SPX={spx_patch.get('spx_spot')}")
     else:
+        patch.update(spx_patch)
         patch["last_action"] = st.get("last_action") or \
             f"GEX from CBOE (15-min delayed) — {patch['direction'].upper()} bias, king ${patch['king_strike']:.0f}"
         patch["market_updated"] = datetime.now(ET).strftime("%H:%M ET")
@@ -558,7 +587,18 @@ def api_state():
         {"name": "Account", "ok": g_account,
          "why": f"${balance:.2f} · {'flat' if not has_pos else 'in position'} · {bot_phase}"},
     ]
-    all_go = g_regime and g_signal and g_account
+    # 4th overlay: SPX (institutional / "real money") must not contradict the SPY signal.
+    spx_confirm = g.get("spx_confirm")
+    spx_dir     = g.get("spx_direction")
+    if spx_confirm == "DIVERGENT":
+        g_spx, spx_why = False, f"SPX {(spx_dir or '').upper()} bias diverges — real money disagrees"
+    elif spx_confirm == "ALIGNED":
+        g_spx, spx_why = True, f"SPX {(spx_dir or '').upper()} bias confirms SPY"
+    else:
+        g_spx, spx_why = True, ("SPX flat/neutral" if spx_dir else "no SPX data (neutral)")
+    gates.append({"name": "SPX Confirm", "ok": g_spx, "why": spx_why})
+
+    all_go = g_regime and g_signal and g_account and g_spx
 
     net_gex_total = round(sum((r.get("net_gex_m") or 0) for r in ladder), 2) if ladder else None
 
@@ -597,6 +637,17 @@ def api_state():
         "net_gex_total":  net_gex_total,
         "gex_source":     g.get("gex_source"),
         "gex_expiry":     g.get("gex_expiry"),
+        "spx_spot":       g.get("spx_spot"),
+        "spx_ratio":      g.get("spx_ratio"),
+        "spx_direction":  g.get("spx_direction"),
+        "spx_regime":     g.get("spx_regime"),
+        "spx_net_gex":    g.get("spx_net_gex"),
+        "spx_confirm":    g.get("spx_confirm"),
+        "spx_king_spy":      g.get("spx_king_spy"),
+        "spx_flip_spy":      g.get("spx_flip_spy"),
+        "spx_call_wall_spy": g.get("spx_call_wall_spy"),
+        "spx_put_wall_spy":  g.get("spx_put_wall_spy"),
+        "spx_max_pain_spy":  g.get("spx_max_pain_spy"),
         "confidence_reasons": g.get("confidence_reasons", []),
         "conf_pct":       conf_pct,
         "gates":          gates,

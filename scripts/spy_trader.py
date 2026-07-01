@@ -796,6 +796,28 @@ def main():
     print_dealer_flow(gex_features, spot, vix, direction, confidence, reasons)
     print_pattern_report()
 
+    # Gate 6b — SPX "real-money" confirmation. SPX/SPXW carry the institutional
+    # dealer gamma that actually drives the tape; require it not to contradict us.
+    spx_state = {}
+    try:
+        from scripts.spx_signal import confirmation as spx_confirmation
+        spxc = spx_confirmation(direction, spy_spot=spot)
+        if spxc:
+            confidence = max(0.0, min(1.0, confidence * spxc["mult"]))
+            reasons.append(spxc["reason"])
+            log.info(f"SPX CONFIRM: {spxc['label']} (x{spxc['mult']}) → conf now {confidence*100:.0f}%")
+            spx_state = {
+                "spx_spot": spxc["spx_spot"], "spx_direction": spxc["direction"],
+                "spx_regime": spxc["regime"], "spx_confirm": spxc["label"],
+                "spx_king_spy": spxc.get("levels_spy", {}).get("king"),
+            }
+            if spxc["label"] == "DIVERGENT" and confidence < 0.45:
+                log.warning(f"GATE 6b BLOCKED: SPX diverges & conf {confidence*100:.0f}% < 45%"); sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        log.info(f"SPX confirmation unavailable (non-fatal): {e}")
+
     if confidence < 0.35:
         log.warning(f"GATE 7 BLOCKED: GEX confidence {confidence*100:.0f}% < 35%"); sys.exit(0)
     log.info(f"GATE 7 PASS: GEX confidence {confidence*100:.0f}%")
@@ -820,6 +842,7 @@ def main():
         "confidence": confidence,
         "entry_strike": float(contract["strike_price"]),
         "entry_price": ask, "entry_qty": qty,
+        **spx_state,
     })
 
     if not DRY_RUN:
@@ -913,6 +936,27 @@ def analyze_gex_only():
         gex_features          = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
         gamma_flip            = gex_features.get("gamma_flip", king_strike)
         confidence, reasons   = gex_confidence_score(gex_features, direction)
+
+        # SPX real-money confirmation (same layer the entry path applies).
+        spx_fields = {}
+        try:
+            from scripts.spx_signal import confirmation as spx_confirmation
+            spxc = spx_confirmation(direction, spy_spot=spot)
+            if spxc:
+                confidence = max(0.0, min(1.0, confidence * spxc["mult"]))
+                reasons.append(spxc["reason"])
+                lv = spxc.get("levels_spy", {})
+                spx_fields = {
+                    "spx_spot": spxc["spx_spot"], "spx_ratio": spxc["ratio"],
+                    "spx_direction": spxc["direction"], "spx_regime": spxc["regime"],
+                    "spx_net_gex": spxc["net_gex"], "spx_confirm": spxc["label"],
+                    "spx_expiry": spxc.get("expiry"),
+                    "spx_king_spy": lv.get("king"), "spx_flip_spy": lv.get("gamma_flip"),
+                    "spx_call_wall_spy": lv.get("call_wall"), "spx_put_wall_spy": lv.get("put_wall"),
+                    "spx_max_pain_spy": lv.get("max_pain"),
+                }
+        except Exception as e:
+            log.info(f"SPX confirmation unavailable in scan (non-fatal): {e}")
 
         # Expert signal layers (informational in GEX scan — no gating, just reporting)
         vix_prev                       = get_vix_prev_close()
@@ -1008,6 +1052,7 @@ def analyze_gex_only():
             "direction":   direction,
             "confidence":  round(confidence, 3),
             "confidence_reasons": reasons,
+            **spx_fields,
             "net_gex_total": round(sum(row["net_gex_m"] for row in ladder), 2),
             "gamma_flip":  gamma_flip,
             "max_pain":    max_pain,

@@ -192,6 +192,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
     <div class="h-price"><span class="h-label">SPY</span><span class="h-val spy" id="h-spy">--</span><span class="h-sub" id="h-spy-chg">vs prev close</span></div>
     <div class="h-price"><span class="h-label">VIX</span><span class="h-val vix" id="h-vix">--</span><span class="h-sub" id="h-ts">--</span></div>
     <div class="h-price"><span class="h-label">VIX3M</span><span class="h-val vix" id="h-vix3m">--</span><span class="h-sub">term</span></div>
+    <div class="h-price"><span class="h-label">SPX <span style="color:var(--purple)">▪</span></span><span class="h-val" id="h-spx" style="color:var(--purple)">--</span><span class="h-sub" id="h-spx-ratio">real money</span></div>
     <div class="h-price"><span class="h-label">Balance</span><span class="h-val bal" id="h-bal">--</span><span class="h-sub">agentic</span></div>
     <div class="h-price"><span class="h-label">Realized P&amp;L</span><span class="h-val pnl" id="h-pnl">--</span><span class="h-sub" id="h-wr">--</span></div>
   </div>
@@ -221,6 +222,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="sb-sig"><span class="sb-arrow flat" id="sb-arrow">—</span><span class="sb-label flat" id="sb-label">AWAITING</span></div>
   <div class="sb-div"></div>
   <div class="sb-item"><span class="sb-k">Conf</span><div class="sb-conf-bar"><div class="sb-conf-fill" id="sb-conf-fill" style="width:0%"></div></div><span class="sb-v" id="sb-conf">--%</span></div>
+  <div class="sb-div"></div>
+  <div class="sb-item"><span class="sb-k">SPX</span><span class="sb-v" id="sb-spx-confirm" style="font-weight:700">--</span></div>
   <div class="sb-div"></div>
   <div class="sb-item"><span class="sb-k">Regime</span><span class="sb-v" id="sb-regime">--</span></div>
   <div class="sb-item"><span class="sb-k">Term</span><span class="sb-v" id="sb-ts">--</span></div>
@@ -318,6 +321,8 @@ function renderHeader(d){
   document.getElementById('h-vix').textContent = d.vix ? d.vix.toFixed(2) : '--';
   var ts=document.getElementById('h-ts'); ts.textContent=(d.ts_label||'--').replace(/_/g,' '); ts.className='h-sub '+(d.ts_label==='backwardation'?'neg':'pos');
   document.getElementById('h-vix3m').textContent = d.vix3m ? d.vix3m.toFixed(2) : '--';
+  document.getElementById('h-spx').textContent = d.spx_spot ? d.spx_spot.toFixed(2) : '--';
+  document.getElementById('h-spx-ratio').textContent = d.spx_ratio ? (d.spx_ratio.toFixed(2)+'x SPY') : 'real money';
   document.getElementById('h-bal').textContent = d.balance ? '$'+d.balance.toFixed(2) : '--';
   var pnl=d.total_pnl||0, pe=document.getElementById('h-pnl');
   pe.textContent=(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2); pe.className='h-val pnl '+(pnl>0?'pos':pnl<0?'neg':'');
@@ -354,6 +359,11 @@ function renderSignal(d){
   var conf=d.conf_pct!=null?d.conf_pct:(d.confidence!=null?Math.round(d.confidence*(d.confidence<=1?100:1)):0);
   var f=document.getElementById('sb-conf-fill'); f.style.width=conf+'%'; f.style.background=conf>=65?C.green:conf>=45?C.yellow:C.red;
   document.getElementById('sb-conf').textContent=conf+'%';
+  var sc=document.getElementById('sb-spx-confirm');
+  if(d.spx_confirm==='ALIGNED'){ sc.textContent='✓ '+(d.spx_direction||'').toUpperCase(); sc.style.color=C.green; }
+  else if(d.spx_confirm==='DIVERGENT'){ sc.textContent='✗ '+(d.spx_direction||'').toUpperCase(); sc.style.color=C.red; }
+  else if(d.spx_direction){ sc.textContent=d.spx_direction.toUpperCase(); sc.style.color=C.purple; }
+  else { sc.textContent='--'; sc.style.color=C.muted; }
   var vix=d.vix||0, reg=vix?(vix>35?'CRISIS':vix>25?'FEAR':vix>18?'CAUTION':vix>13?'NORMAL':'LOW'):'--';
   document.getElementById('sb-regime').textContent=reg;
   var ts=d.ts_label||'', tse=document.getElementById('sb-ts'); tse.textContent=ts.replace(/_/g,' ')||'--'; tse.className='sb-v '+(ts||'');
@@ -516,7 +526,7 @@ function renderMainChart(d){
 }
 
 function renderCloud(d){
-  setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.6)"></i>+GEX pin</span><span><i class="lg-dot" style="background:rgba(255,51,85,.6)"></i>−GEX trend</span><span><i class="lg-line" style="border-color:'+C.yellow+'"></i>γ flip</span><span><i class="lg-line" style="border-color:'+C.orange+'"></i>king</span>');
+  setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.6)"></i>+GEX pin</span><span><i class="lg-dot" style="background:rgba(255,51,85,.6)"></i>−GEX trend</span><span><i class="lg-line" style="border-color:'+C.yellow+'"></i>γ flip</span><span><i class="lg-line" style="border-color:'+C.orange+'"></i>king</span><span><i class="lg-line" style="border-color:'+C.purple+';border-style:dashed"></i>SPX levels</span>');
   var candles=d.candles||[], gex=d.gex_by_strike||[], spot=d.spot, hist=lastHistory||[];
   var ph=document.getElementById('chart-ph'), ch=document.getElementById('main-chart');
   // Only truly blank if we have neither a price nor any GEX structure.
@@ -538,9 +548,10 @@ function renderCloud(d){
       shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:s.strike-half,y1:s.strike+half,fillcolor:(net>0?'rgba(0,208,132,':'rgba(255,51,85,')+op+')',line:{width:0},layer:'below'});});
   }
   if(spot) yvals.push(spot);
-  [{v:d.king_strike,c:C.orange,dash:'solid',w:2,l:'KING ♛'},{v:d.gamma_flip,c:C.yellow,dash:'solid',w:1.5,l:'γ FLIP'},{v:d.call_wall,c:C.green,dash:'dot',w:1,l:'CALL WALL'},{v:d.put_wall,c:C.red,dash:'dot',w:1,l:'PUT WALL'},{v:d.max_pain,c:C.blue,dash:'dash',w:1,l:'MAX PAIN'}].forEach(function(ln){
+  [{v:d.king_strike,c:C.orange,dash:'solid',w:2,l:'KING ♛'},{v:d.gamma_flip,c:C.yellow,dash:'solid',w:1.5,l:'γ FLIP'},{v:d.call_wall,c:C.green,dash:'dot',w:1,l:'CALL WALL'},{v:d.put_wall,c:C.red,dash:'dot',w:1,l:'PUT WALL'},{v:d.max_pain,c:C.blue,dash:'dash',w:1,l:'MAX PAIN'},
+   {v:d.spx_flip_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX γFLIP',right:1},{v:d.spx_call_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX C.WALL',right:1},{v:d.spx_put_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX P.WALL',right:1}].forEach(function(ln){
     if(!ln.v)return; yvals.push(ln.v); shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:ln.v,y1:ln.v,line:{color:ln.c,width:ln.w,dash:ln.dash}});
-    annos.push({xref:'paper',yref:'y',x:0.006,y:ln.v,text:ln.l,showarrow:false,yanchor:'bottom',font:{size:8,color:ln.c,family:'monospace'}});});
+    annos.push({xref:'paper',yref:'y',x:(ln.right?0.994:0.006),y:ln.v,text:ln.l,showarrow:false,xanchor:(ln.right?'right':'left'),yanchor:'bottom',font:{size:8,color:ln.c,family:'monospace'}});});
 
   var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:48,r:10,t:6,b:32},
     yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
