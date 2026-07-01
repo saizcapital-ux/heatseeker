@@ -662,6 +662,34 @@ def api_state():
     else:
         bot_phase, bot_phase_label = "monitor", "Monitoring — GEX scan only, no new entries"
 
+    # ── Trade-lifecycle levels for the open position, translated to the SPY axis ──
+    # Option stop/trail/target are premium-based; map them to approximate SPY
+    # prices via the entry delta so they can be drawn on the price chart.
+    trade_levels = None
+    op = g.get("open_positions") or []
+    if op:
+        es, ep, ed = g.get("entry_spot"), g.get("entry_price"), g.get("entry_delta")
+        ot, strike = (g.get("entry_opt_type") or "call"), g.get("entry_strike")
+        try:
+            if es and ep and ed and strike:
+                es, ep, strike = float(es), float(ep), float(strike)
+                dlt = abs(float(ed)) or 0.4
+                is_call = str(ot).lower().startswith("c")
+                be = strike + ep if is_call else strike - ep
+                def _mv(pct):  # SPY move for a premium % change, via delta
+                    return pct * ep / dlt
+                if is_call:
+                    stop, trail, tp = es - _mv(0.50), es + _mv(0.30), es + _mv(1.00)
+                else:
+                    stop, trail, tp = es + _mv(0.50), es - _mv(0.30), es - _mv(1.00)
+                trade_levels = {
+                    "entry": round(es, 2), "strike": round(strike, 2), "be": round(be, 2),
+                    "stop": round(stop, 2), "trail": round(trail, 2), "target": round(tp, 2),
+                    "opt_type": ot, "pnl_pct": op[0].get("pnl_pct"),
+                }
+        except Exception:
+            trade_levels = None
+
     # ── Decision transparency: reconstruct the three entry gates the bot uses ──
     vix       = g.get("vix") or 0
     slope     = g.get("ts_slope")
@@ -717,6 +745,7 @@ def api_state():
         "total_pnl":      round(total_pnl, 2),
         "trades":         trades[-20:],
         "open_positions": g.get("open_positions", []),
+        "trade_levels":   trade_levels,
         "gex_by_strike":  gex_by_strike,
         "king_strike":    g.get("king_strike"),
         "king_gex_m":     g.get("king_gex_m"),

@@ -929,6 +929,7 @@ def main():
         "entry_strike": float(contract["strike_price"]),
         "entry_price": ask, "entry_qty": qty,
         "entry_setup": setup,
+        "entry_spot": spot, "entry_delta": abs(delta) or None, "entry_opt_type": direction,
         **spx_state,
     })
 

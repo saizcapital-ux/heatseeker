@@ -628,7 +628,20 @@ function renderCloud(d){
     }
     levels.forEach(function(L){ if(L.y>=yLo&&L.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:L.y,y1:L.y,line:{color:L.c,width:L.w,dash:L.dash}}); });
     if(spot&&spot>=yLo&&spot<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
-    placeTags(annos, levels.map(function(L){return {y:L.y,c:L.c,text:L.l+' '+Math.round(L.y)};}), yLo,yHi);
+    var items = levels.map(function(L){return {y:L.y,c:L.c,text:L.l+' '+Math.round(L.y)};});
+    // Trade-lifecycle levels for the open position (entry / target / trail / stop / break-even)
+    if(d.trade_levels){
+      var tl=d.trade_levels;
+      [{y:tl.entry, c:'#fff',   t:'▶ ENTRY',  w:1.5},
+       {y:tl.target,c:C.green,  t:'★ TARGET', w:1},
+       {y:tl.trail, c:C.yellow, t:'⚑ TRAIL',  w:1},
+       {y:tl.stop,  c:C.red,    t:'✖ STOP',   w:1.5},
+       {y:tl.be,    c:C.blue,   t:'B/E',      w:1}
+      ].forEach(function(x){ if(!x.y) return;
+        if(x.y>=yLo&&x.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:x.y,y1:x.y,line:{color:x.c,width:x.w,dash:'longdash'}});
+        items.push({y:x.y,c:x.c,text:x.t+' '+x.y}); });
+    }
+    placeTags(annos, items, yLo,yHi);
     if(spot&&spot>=yLo&&spot<=yHi) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
 
     // Regime banner + plain-English trade context (the "so what" of the chart).
@@ -798,15 +811,28 @@ function renderProfile(d){
   plot([barT,cumT],layout,'profile');
 }
 
-var plotObj={init:false}, chartGeom=null;
+var plotObj={init:false,userZoomed:false,relayoutBound:false}, chartGeom=null;
 function plot(traces,layout,mode){
-  var cfg={responsive:true,displayModeBar:false};
-  if(!plotObj.init||chartMode!==mode){ Plotly.newPlot('main-chart',traces,layout,cfg); plotObj.init=true; chartMode=mode; }
+  // uirevision (constant per chart mode) preserves the user's zoom/pan across the
+  // periodic data refreshes; changing mode (tab) resets the view.
+  layout.uirevision = mode;
+  var cfg={responsive:true, scrollZoom:true, displaylogo:false,
+    modeBarButtonsToRemove:['select2d','lasso2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']};
+  var freshMode = (!plotObj.init || chartMode!==mode);
+  if(freshMode){ plotObj.userZoomed=false; Plotly.newPlot('main-chart',traces,layout,cfg); plotObj.init=true; chartMode=mode; }
   else { Plotly.react('main-chart',traces,layout,cfg); }
-  // Remember the price↔pixel mapping so the crosshair can read a live price.
-  chartGeom = (layout.yaxis && layout.yaxis.range)
-    ? {yLo:layout.yaxis.range[0], yHi:layout.yaxis.range[1], mt:layout.margin.t, mb:layout.margin.b}
-    : null;
+  // Price↔pixel mapping for the crosshair — don't clobber it while the user is zoomed.
+  if((freshMode || !plotObj.userZoomed) && layout.yaxis && layout.yaxis.range){
+    chartGeom = {yLo:layout.yaxis.range[0], yHi:layout.yaxis.range[1], mt:layout.margin.t, mb:layout.margin.b};
+  }
+  if(!plotObj.relayoutBound){
+    var gd=document.getElementById('main-chart');
+    gd.on('plotly_relayout', function(e){
+      if(e['yaxis.range[0]']!=null && chartGeom){ plotObj.userZoomed=true; chartGeom.yLo=e['yaxis.range[0]']; chartGeom.yHi=e['yaxis.range[1]']; }
+      if(e['yaxis.autorange'] || e['xaxis.autorange']){ plotObj.userZoomed=false; }  // reset/autoscale
+    });
+    plotObj.relayoutBound=true;
+  }
 }
 
 // ── Crosshair: horizontal guide + live price pill in the gutter (all 3 charts) ──
