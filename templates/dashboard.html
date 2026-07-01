@@ -212,6 +212,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   </div>
   <div class="bot-badges">
     <div class="bstat"><span class="bstat-k">Net GEX</span><span class="bstat-v" id="b-netgex">--</span></div>
+    <div class="bstat"><span class="bstat-k">SPX Regime</span><span class="bstat-v" id="b-spxreg" style="color:var(--purple)">--</span></div>
+    <div class="bstat"><span class="bstat-k">Call/Put Flow</span><span class="bstat-v" id="b-flow">--</span></div>
     <div class="bstat"><span class="bstat-k">King ♛</span><span class="bstat-v" id="b-king" style="color:var(--orange)">--</span></div>
     <div class="bstat"><span class="bstat-k">γ Flip</span><span class="bstat-v" id="b-flip" style="color:var(--yellow)">--</span></div>
     <span class="pill warn" id="b-regime">REGIME --</span>
@@ -231,6 +233,9 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="sb-item"><span class="sb-k">Call Wall</span><span class="sb-v" id="sb-cw" style="color:var(--green)">--</span></div>
   <div class="sb-item"><span class="sb-k">Put Wall</span><span class="sb-v" id="sb-pw" style="color:var(--red)">--</span></div>
   <div class="sb-item"><span class="sb-k">Max Pain</span><span class="sb-v" id="sb-pain" style="color:var(--blue)">--</span></div>
+  <div class="sb-div"></div>
+  <div class="sb-item"><span class="sb-k">IVR</span><span class="sb-v" id="sb-ivr">--</span></div>
+  <div class="sb-item"><span class="sb-k">VRP</span><span class="sb-v" id="sb-vrp">--</span></div>
 </div>
 
 <div id="body">
@@ -343,8 +348,19 @@ function renderBot(d){
   document.getElementById('bot-action').textContent = d.last_action||'—';
   var ng=d.net_gex_total, nge=document.getElementById('b-netgex');
   if(ng!=null){ nge.textContent=(ng>=0?'+':'')+ng.toFixed(1)+'M '+(ng>=0?'PIN':'TREND'); nge.style.color = ng>=0?C.green:C.red; } else nge.textContent='--';
-  document.getElementById('b-king').textContent = d.king_strike ? '$'+d.king_strike : '--';
+  document.getElementById('b-king').textContent = d.king_strike ? ('$'+d.king_strike+(d.king_gex_m!=null?' ('+(d.king_gex_m>=0?'+':'')+d.king_gex_m+'M)':'')) : '--';
   document.getElementById('b-flip').textContent = d.gamma_flip ? '$'+d.gamma_flip : '--';
+
+  var sr=document.getElementById('b-spxreg');
+  if(d.spx_regime==='positive'){ sr.textContent='POS γ (pin)'; sr.style.color=C.green; }
+  else if(d.spx_regime==='negative'){ sr.textContent='NEG γ (trend)'; sr.style.color=C.red; }
+  else { sr.textContent='--'; sr.style.color=C.purple; }
+
+  var cv=d.call_vol_total||0, pv=d.put_vol_total||0, tot=cv+pv, fl=document.getElementById('b-flow');
+  if(tot){ var cpct=Math.round(cv/tot*100);
+    fl.textContent=cpct+'C / '+(100-cpct)+'P';
+    fl.style.color = cpct>=58?C.green:cpct<=42?C.red:C.text;
+  } else fl.textContent='--';
   var reg=document.getElementById('b-regime');
   if(d.regime_ok===true){reg.className='pill ok';reg.textContent='REGIME ALIGNED';}
   else if(d.regime_ok===false){reg.className='pill warn';reg.textContent='REGIME CAUTION';}
@@ -371,6 +387,11 @@ function renderSignal(d){
   document.getElementById('sb-cw').textContent=d.call_wall?'$'+d.call_wall:'--';
   document.getElementById('sb-pw').textContent=d.put_wall?'$'+d.put_wall:'--';
   document.getElementById('sb-pain').textContent=d.max_pain?'$'+d.max_pain:'--';
+  var ivrEl=document.getElementById('sb-ivr');
+  if(d.ivr!=null){ var ivrPct=Math.round(d.ivr*(d.ivr<=1?100:1)); ivrEl.textContent=ivrPct+'%'; ivrEl.style.color=ivrPct>=50?C.red:ivrPct<=30?C.green:C.text; }
+  else ivrEl.textContent='--';
+  var vrpEl=document.getElementById('sb-vrp');
+  vrpEl.textContent=d.vrp_label?d.vrp_label.replace(/_/g,' '):'--';
 }
 
 /* Bot brain */
@@ -553,7 +574,7 @@ function renderCloud(d){
   }
   if(spot) yvals.push(spot);
   [{v:d.king_strike,c:C.orange,dash:'solid',w:2,l:'KING ♛'},{v:d.gamma_flip,c:C.yellow,dash:'solid',w:1.5,l:'γ FLIP'},{v:d.call_wall,c:C.green,dash:'dot',w:1,l:'CALL WALL'},{v:d.put_wall,c:C.red,dash:'dot',w:1,l:'PUT WALL'},{v:d.max_pain,c:C.blue,dash:'dash',w:1,l:'MAX PAIN'},
-   {v:d.spx_flip_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX γFLIP',right:1},{v:d.spx_call_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX C.WALL',right:1},{v:d.spx_put_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX P.WALL',right:1}].forEach(function(ln){
+   {v:d.spx_flip_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX γFLIP',right:1},{v:d.spx_king_spy,c:C.purple,dash:'dashdot',w:1.5,l:'SPX KING',right:1},{v:d.spx_call_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX C.WALL',right:1},{v:d.spx_put_wall_spy,c:C.purple,dash:'dot',w:1,l:'SPX P.WALL',right:1},{v:d.spx_max_pain_spy,c:C.purple,dash:'dot',w:1,l:'SPX PAIN',right:1}].forEach(function(ln){
     if(!ln.v)return; yvals.push(ln.v); shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:ln.v,y1:ln.v,line:{color:ln.c,width:ln.w,dash:ln.dash}});
     annos.push({xref:'paper',yref:'y',x:(ln.right?0.994:0.006),y:ln.v,text:ln.l,showarrow:false,xanchor:(ln.right?'right':'left'),yanchor:'bottom',font:{size:8,color:ln.c,family:'monospace'}});});
 
