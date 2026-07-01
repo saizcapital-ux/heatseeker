@@ -780,6 +780,13 @@ def _health_checks():
     return {"ready": ready, "checks": checks,
             "ts": datetime.now(ET).strftime("%H:%M:%S ET")}
 
+@app.route("/ping")
+def ping():
+    # Liveness only — 200 whenever the web process is up. Use THIS as Railway's
+    # healthcheck path (never /health, which is a human-readable config report and
+    # would crash-loop the dashboard if a down RH login were treated as unhealthy).
+    return "ok", 200
+
 @app.route("/api/health")
 def api_health():
     return jsonify(_health_checks())
