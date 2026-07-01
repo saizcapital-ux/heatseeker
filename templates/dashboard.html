@@ -763,14 +763,25 @@ function renderMigration(d){
   for(var i=1;i<h.length;i++){ var a=h[i-1],b=h[i]; if(a.flip==null||b.flip==null)continue;
     var pos=(b.spot>=b.flip); shapes.push({type:'rect',xref:'x',yref:'paper',x0:a.t,x1:b.t,y0:0,y1:1,fillcolor:pos?'rgba(0,208,132,.05)':'rgba(255,51,85,.05)',line:{width:0},layer:'below'}); }
 
-  // Frame the y-axis to the data and tag each line's CURRENT value on the right.
+  // Frame the y-axis to the data (and the open-position levels) and tag each
+  // line's CURRENT value on the right.
   var allY=[]; h.forEach(function(p){ ['spot','flip','king','cw','pw'].forEach(function(k){ if(p[k]!=null) allY.push(p[k]); }); });
+  var TL=d.trade_levels;
+  if(TL) ['entry','stop','trail','target','be'].forEach(function(k){ if(TL[k]) allY.push(TL[k]); });
   var yLo=Math.min.apply(null,allY), yHi=Math.max.apply(null,allY); var pad=((yHi-yLo)*0.08)||1; yLo-=pad; yHi+=pad;
   var lp=h[h.length-1], annos=[], items=[];
   if(lp.pw!=null)   items.push({y:lp.pw,   c:C.red,   text:'P.WALL '+Math.round(lp.pw)});
   if(lp.cw!=null)   items.push({y:lp.cw,   c:C.green, text:'C.WALL '+Math.round(lp.cw)});
   if(lp.king!=null) items.push({y:lp.king, c:C.orange,text:'KING '+Math.round(lp.king)});
   if(lp.flip!=null) items.push({y:lp.flip, c:C.yellow,text:'γ FLIP '+Math.round(lp.flip)});
+  // Trade-lifecycle levels for the open position.
+  if(TL){
+    [{y:TL.entry,c:'#fff',t:'▶ ENTRY',w:1.5},{y:TL.target,c:C.green,t:'★ TARGET',w:1},
+     {y:TL.trail,c:C.yellow,t:'⚑ TRAIL',w:1},{y:TL.stop,c:C.red,t:'✖ STOP',w:1.5},
+     {y:TL.be,c:C.blue,t:'B/E',w:1}].forEach(function(x){ if(!x.y) return;
+      shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:x.y,y1:x.y,line:{color:x.c,width:x.w,dash:'longdash'}});
+      items.push({y:x.y,c:x.c,text:x.t+' '+x.y}); });
+  }
   placeTags(annos,items,yLo,yHi);
   if(lp.spot!=null) annos.push(gexTag(lp.spot,'#fff','● SPY '+lp.spot.toFixed(2),'#fff'));
 
