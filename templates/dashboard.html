@@ -85,6 +85,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .lg-line { width:12px; border-top:2px solid; display:inline-block; }
 
 #main-chart-wrap { flex:1; min-height:0; position:relative; }
+#cross-line { position:absolute; left:0; right:0; height:0; border-top:1px dashed rgba(120,131,160,.65); pointer-events:none; display:none; z-index:5; }
+#cross-price { position:absolute; right:3px; transform:translateY(-50%); background:#e6e9f0; color:#0a0c10; font:700 10px/1 'SF Mono','Fira Code',monospace; padding:3px 6px; border-radius:3px; pointer-events:none; display:none; z-index:6; white-space:nowrap; }
 #main-chart { position:absolute; inset:0; }
 #chart-ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px; text-align:center; line-height:1.9; }
 
@@ -249,6 +251,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
     </div>
     <div id="main-chart-wrap">
       <div id="main-chart"></div>
+      <div id="cross-line"></div>
+      <div id="cross-price"></div>
       <div id="chart-ph">Charts render during market hours<br><span style="font-size:9px">GEX levels below update on every 15-min scan</span></div>
     </div>
     <div id="gex-levels-wrap">
@@ -722,12 +726,38 @@ function renderProfile(d){
   plot([barT,cumT],layout,'profile');
 }
 
-var plotObj={init:false};
+var plotObj={init:false}, chartGeom=null;
 function plot(traces,layout,mode){
   var cfg={responsive:true,displayModeBar:false};
   if(!plotObj.init||chartMode!==mode){ Plotly.newPlot('main-chart',traces,layout,cfg); plotObj.init=true; chartMode=mode; }
   else { Plotly.react('main-chart',traces,layout,cfg); }
+  // Remember the price↔pixel mapping so the crosshair can read a live price.
+  chartGeom = (layout.yaxis && layout.yaxis.range)
+    ? {yLo:layout.yaxis.range[0], yHi:layout.yaxis.range[1], mt:layout.margin.t, mb:layout.margin.b}
+    : null;
 }
+
+// ── Crosshair: horizontal guide + live price pill in the gutter (all 3 charts) ──
+(function(){
+  var wrap=document.getElementById('main-chart-wrap');
+  var chart=document.getElementById('main-chart');
+  var line=document.getElementById('cross-line');
+  var pill=document.getElementById('cross-price');
+  if(!wrap||!chart) return;
+  function hide(){ line.style.display='none'; pill.style.display='none'; }
+  wrap.addEventListener('mousemove', function(e){
+    if(!chartGeom || chart.style.display==='none'){ hide(); return; }
+    var wr=wrap.getBoundingClientRect(), cr=chart.getBoundingClientRect();
+    var top=cr.top+chartGeom.mt, bot=cr.bottom-chartGeom.mb;
+    if(e.clientY<top || e.clientY>bot){ hide(); return; }
+    var frac=(e.clientY-top)/((bot-top)||1);
+    var price=chartGeom.yHi - frac*(chartGeom.yHi-chartGeom.yLo);
+    var y=e.clientY-wr.top;
+    line.style.top=y+'px'; line.style.display='block';
+    pill.style.top=y+'px'; pill.textContent='$'+price.toFixed(2); pill.style.display='block';
+  });
+  wrap.addEventListener('mouseleave', hide);
+})();
 
 function poll(){
   Promise.all([
