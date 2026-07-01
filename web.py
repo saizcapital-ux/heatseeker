@@ -372,50 +372,63 @@ def _write_state(patch):
             json.dump(state, f, indent=2)
         _append_history(state)
 
+_rh_login_inflight = False
+def _rh_login_worker():
+    """Blocking Robinhood login (may wait on device approval) — runs OFF the
+    ticker thread so a pending approval can't freeze CBOE/candle refreshes."""
+    global _rh_login_inflight
+    try:
+        import robin_stocks.robinhood as rh
+        u = os.getenv("RH_USERNAME", ""); p = os.getenv("RH_PASSWORD", "")
+        if not (u and p):
+            return
+        sd = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
+        sd.mkdir(parents=True, exist_ok=True)
+        tk = pathlib.Path.home() / ".tokens"
+        if not tk.exists():
+            try: tk.symlink_to(sd)
+            except Exception: pass
+        mfa = None
+        totp = os.getenv("RH_TOTP_SECRET", "").strip()
+        if totp:
+            try:
+                import pyotp
+                mfa = pyotp.TOTP(totp).now()
+            except Exception: pass
+        if not mfa:
+            mfa = os.getenv("RH_MFA_CODE") or None
+        log.info("RH login starting (background)…")
+        rh.login(username=u, password=p, mfa_code=mfa,
+                 store_session=True, expiresIn=86400, pickle_name="heatseeker")
+        _ticker_status["logged_in"] = True
+        _ticker_status["last_error"] = None
+        log.info("RH login OK")
+    except Exception as e:
+        _ticker_status["last_error"] = str(e)
+        log.warning(f"RH background login failed: {e}")
+    finally:
+        _rh_login_inflight = False
+
 # ── background ticker: SPY + VIX + balance + open positions every 60s ────────
 def _ticker():
-    global _tick_count
-    logged_in = False
+    global _tick_count, _rh_login_inflight
     while True:
+        logged_in = _ticker_status["logged_in"]
         # Always-on GEX base layer — runs regardless of Robinhood/login state so
         # the dashboard is never blank. Self-throttled to every CBOE_REFRESH_SEC.
         try:
             _refresh_cboe_gex()
         except Exception as e:
             log.debug(f"CBOE refresh error: {e}")
-        # Fill candles from a keyless source before the (possibly blocking) RH
-        # login, so the chart isn't empty while device approval is pending.
+        # Not logged in: keep the chart alive with keyless candles and kick off
+        # the (blocking) login in the background so it never stalls this loop.
         if not logged_in:
             _refresh_yf_candles()
+            if not _rh_login_inflight and os.getenv("RH_USERNAME") and os.getenv("RH_PASSWORD"):
+                _rh_login_inflight = True
+                threading.Thread(target=_rh_login_worker, daemon=True).start()
         try:
             import robin_stocks.robinhood as rh
-            if not logged_in:
-                u = os.getenv("RH_USERNAME", "")
-                p = os.getenv("RH_PASSWORD", "")
-                if u and p:
-                    sd = pathlib.Path(os.getenv("RH_SESSION_DIR", "/data/rh_session"))
-                    sd.mkdir(parents=True, exist_ok=True)
-                    tk = pathlib.Path.home() / ".tokens"
-                    if not tk.exists():
-                        try: tk.symlink_to(sd)
-                        except Exception: pass
-                    mfa = None
-                    totp = os.getenv("RH_TOTP_SECRET", "").strip()
-                    if totp:
-                        try:
-                            import pyotp
-                            mfa = pyotp.TOTP(totp).now()
-                        except Exception: pass
-                    if not mfa:
-                        mfa = os.getenv("RH_MFA_CODE") or None
-                    rh.login(username=u, password=p, mfa_code=mfa,
-                             store_session=True, expiresIn=86400,
-                             pickle_name="heatseeker")
-                    logged_in = True
-                    _ticker_status["logged_in"] = True
-                    _ticker_status["last_error"] = None
-                    log.info("RH login OK")
-
             # yfinance fallback — runs even without RH login so dashboard stays live
             if not logged_in:
                 try:
@@ -438,31 +451,9 @@ def _ticker():
                             patch["ts_slope"] = slope
                             patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
                             break
-                    # Keyless intraday candles (incl. pre/post) so the chart is
-                    # populated even when Robinhood isn't logged in.
-                    try:
-                        df = yf.Ticker("SPY").history(period="1d", interval="5m", prepost=True)
-                        candles = []
-                        for idx, row in df.iterrows():
-                            o, h, l, c = row.get("Open"), row.get("High"), row.get("Low"), row.get("Close")
-                            if not (o and h and l and c) or o != o:  # skip NaN/zero rows
-                                continue
-                            try:
-                                et = idx.tz_convert(ET)
-                            except Exception:
-                                et = idx
-                            m = et.hour * 60 + et.minute
-                            sess = "reg" if 570 <= m < 960 else ("pre" if m < 570 else "post")
-                            candles.append({"t": idx.isoformat(), "o": round(float(o), 2),
-                                            "h": round(float(h), 2), "l": round(float(l), 2),
-                                            "c": round(float(c), 2), "v": int(row.get("Volume") or 0), "s": sess})
-                        if candles:
-                            patch["candles"] = candles
-                            log.info(f"yfinance candles: {len(candles)} bars")
-                    except Exception as ce:
-                        log.debug(f"yfinance candle error: {ce}")
+                    # (Candles come from _refresh_yf_candles() above, before login.)
                     _write_state(patch)
-                    log.info(f"yfinance tick SPY={patch.get('spot')} VIX={patch.get('vix')} candles={len(patch.get('candles',[]))}")
+                    log.info(f"yfinance tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
                 except Exception as yfe:
                     log.debug(f"yfinance fallback error: {yfe}")
 
@@ -609,9 +600,8 @@ def _ticker():
         except Exception as e:
             import traceback
             log.warning(f"ticker error: {e}\n{traceback.format_exc()}")
-            _ticker_status["logged_in"] = False
+            _ticker_status["logged_in"] = False   # force a fresh background re-login
             _ticker_status["last_error"] = str(e)
-            logged_in = False
 
         for _ in range(60):
             time.sleep(1)
