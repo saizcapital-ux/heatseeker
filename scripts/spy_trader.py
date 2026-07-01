@@ -1007,6 +1007,8 @@ def analyze_gex_only():
             "king_gex_m":  round(king_gex / 1e6, 2),
             "direction":   direction,
             "confidence":  round(confidence, 3),
+            "confidence_reasons": reasons,
+            "net_gex_total": round(sum(row["net_gex_m"] for row in ladder), 2),
             "gamma_flip":  gamma_flip,
             "max_pain":    max_pain,
             "call_wall":   gex_features.get("call_wall"),

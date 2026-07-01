@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.log
 .claude/worktrees/
+data/gex_history.json

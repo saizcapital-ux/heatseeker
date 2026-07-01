@@ -12,12 +12,15 @@ log = logging.getLogger("heatseeker")
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
 GEX_STATE    = os.path.join(DATA_DIR, "gex_state.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "gex_history.json")
 JOURNAL_FILE = os.path.join(DATA_DIR, "trades.json")
 VIX_UUID        = "3b912aa2-88f9-4682-8ae3-e39520bdf4db"
 AGENTIC_ACCOUNT = "634079917"
 
 _ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
 _tick_count = 0
+_state_lock = threading.Lock()
+HIST_SAMPLE_SEC = 120   # collapse spot-only updates into the last point within this window
 
 def _read_state():
     try:
@@ -33,12 +36,64 @@ def _read_journal():
     except Exception:
         return []
 
+def _read_history():
+    try:
+        with open(HISTORY_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _append_history(state):
+    """Record an intraday time-series point so the dashboard can show the gamma
+    flip / king node migrating relative to spot through the day (the core 0DTE
+    signal). Spot-only updates within HIST_SAMPLE_SEC collapse into the last
+    point to keep the series smooth without bloat."""
+    spot = state.get("spot")
+    if not spot:
+        return
+    try:
+        now = time.time()
+        today = datetime.now(ET).strftime("%Y-%m-%d")
+        hist = [h for h in _read_history() if h.get("d") == today]
+        ladder = state.get("strike_ladder") or []
+        net_total = round(sum((r.get("net_gex_m") or 0) for r in ladder), 2) if ladder else None
+        flip = state.get("gamma_flip")
+        king = state.get("king_strike")
+        pt = {
+            "d": today,
+            "t": datetime.now(ET).strftime("%H:%M:%S"),
+            "_ts": now,
+            "spot": round(float(spot), 2),
+            "flip": flip,
+            "king": king,
+            "net": net_total,
+            "cw": state.get("call_wall"),
+            "pw": state.get("put_wall"),
+            "vix": state.get("vix"),
+            "dir": state.get("direction"),
+            "conf": state.get("confidence"),
+        }
+        last = hist[-1] if hist else None
+        if (last and now - last.get("_ts", 0) < HIST_SAMPLE_SEC
+                and last.get("flip") == flip and last.get("king") == king):
+            # same regime snapshot — just refresh spot/time on the last point
+            last.update({"spot": pt["spot"], "t": pt["t"], "_ts": now, "vix": pt["vix"]})
+        else:
+            hist.append(pt)
+        hist = hist[-500:]
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(hist, f)
+    except Exception as e:
+        log.debug(f"history append failed: {e}")
+
 def _write_state(patch):
     os.makedirs(DATA_DIR, exist_ok=True)
-    state = _read_state()
-    state.update(patch)
-    with open(GEX_STATE, "w") as f:
-        json.dump(state, f, indent=2)
+    with _state_lock:
+        state = _read_state()
+        state.update(patch)
+        with open(GEX_STATE, "w") as f:
+            json.dump(state, f, indent=2)
+        _append_history(state)
 
 # ── background ticker: SPY + VIX + balance + open positions every 60s ────────
 def _ticker():
@@ -289,6 +344,30 @@ def api_state():
     else:
         bot_phase, bot_phase_label = "monitor", "Monitoring — GEX scan only, no new entries"
 
+    # ── Decision transparency: reconstruct the three entry gates the bot uses ──
+    vix       = g.get("vix") or 0
+    slope     = g.get("ts_slope")
+    conf_raw  = g.get("confidence") or 0
+    conf_pct  = round(conf_raw * 100 if conf_raw <= 1 else conf_raw)
+    direction = g.get("direction")
+    has_pos   = bool(g.get("open_positions"))
+    balance   = round(float(bal), 2)
+
+    g_regime  = bool(vix and vix < 30 and (slope is None or slope > -0.05))
+    g_signal  = bool(direction in ("call", "put") and conf_pct >= 50)
+    g_account = bool(balance >= 1 and not has_pos and bot_phase == "entry")
+    gates = [
+        {"name": "Regime",  "ok": g_regime,
+         "why": (f"VIX {vix:.1f} · {(g.get('ts_label') or '—').replace('_',' ')}" if vix else "no VIX data")},
+        {"name": "Signal",  "ok": g_signal,
+         "why": f"{(direction or 'flat').upper()} @ {conf_pct}% conf"},
+        {"name": "Account", "ok": g_account,
+         "why": f"${balance:.2f} · {'flat' if not has_pos else 'in position'} · {bot_phase}"},
+    ]
+    all_go = g_regime and g_signal and g_account
+
+    net_gex_total = round(sum((r.get("net_gex_m") or 0) for r in ladder), 2) if ladder else None
+
     return jsonify({
         "spot":           g.get("spot"),
         "prev_close":     g.get("prev_close"),
@@ -321,6 +400,11 @@ def api_state():
         "call_vol_total": g.get("call_vol_total"),
         "put_vol_total":  g.get("put_vol_total"),
         "top_nodes":      g.get("top_nodes"),
+        "net_gex_total":  net_gex_total,
+        "confidence_reasons": g.get("confidence_reasons", []),
+        "conf_pct":       conf_pct,
+        "gates":          gates,
+        "all_go":         all_go,
         "candles":        g.get("candles", []),
         "bot_phase":      bot_phase,
         "bot_phase_label": bot_phase_label,
@@ -340,6 +424,15 @@ def api_push():
     if data:
         _write_state(data)
     return jsonify({"ok": True})
+
+@app.route("/api/history")
+def api_history():
+    """Intraday time-series: spot vs gamma flip / king node / net GEX through the day."""
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    hist = [h for h in _read_history() if h.get("d") == today]
+    for h in hist:
+        h.pop("_ts", None)
+    return jsonify({"history": hist})
 
 @app.route("/api/ticker-status")
 def api_ticker_status():
