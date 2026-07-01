@@ -24,6 +24,18 @@ def _write_gex_update(update: dict):
     with open(GEX_STATE, "w") as f:
         json.dump(state, f, indent=2)
 
+def _push_secret():
+    """Match web.py: explicit PUSH_SECRET → derived from RH_USERNAME → default.
+    Both containers share RH_USERNAME, so they agree with zero config."""
+    s = os.getenv("PUSH_SECRET")
+    if s:
+        return s
+    u = os.getenv("RH_USERNAME")
+    if u:
+        import hashlib
+        return "hs_" + hashlib.sha256(("heatseeker-push:" + u).encode()).hexdigest()[:24]
+    return "heatseeker"
+
 def _push_state_to_web():
     """Push gex_state.json to the web container via /api/push (Railway cross-container)."""
     web_url = os.getenv("WEB_URL", "").rstrip("/")
@@ -39,7 +51,7 @@ def _push_state_to_web():
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "X-Push-Key": os.getenv("PUSH_SECRET", "heatseeker"),
+                "X-Push-Key": _push_secret(),
             },
             method="POST",
         )

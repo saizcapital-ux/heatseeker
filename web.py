@@ -20,6 +20,20 @@ AGENTIC_ACCOUNT = "634079917"
 _ticker_status = {"logged_in": False, "last_error": None, "last_ok": None}
 _tick_count = 0
 _state_lock = threading.Lock()
+
+def _push_secret():
+    """Shared secret for the worker→web /api/push channel.
+    Priority: explicit PUSH_SECRET env → auto-derived from RH_USERNAME (both
+    containers have it, so they agree with zero config and it isn't the public
+    default) → 'heatseeker' as a last resort."""
+    s = os.getenv("PUSH_SECRET")
+    if s:
+        return s
+    u = os.getenv("RH_USERNAME")
+    if u:
+        import hashlib
+        return "hs_" + hashlib.sha256(("heatseeker-push:" + u).encode()).hexdigest()[:24]
+    return "heatseeker"
 HIST_SAMPLE_SEC = 120   # collapse spot-only updates into the last point within this window
 
 def _read_state():
@@ -690,7 +704,7 @@ def api_state():
 @app.route("/api/push", methods=["POST"])
 def api_push():
     key = request.headers.get("X-Push-Key", "")
-    expected = os.getenv("PUSH_SECRET", "heatseeker")
+    expected = _push_secret()
     if key != expected:
         return jsonify({"error": "unauthorized"}), 401
     data = request.get_json(force=True) or {}
