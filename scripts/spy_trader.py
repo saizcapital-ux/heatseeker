@@ -25,6 +25,10 @@ VIX_MAX        = 28.0
 DELTA_MIN      = 0.15     # lowered: allow cheap OTM contracts when balance < $100
 DELTA_MAX      = 0.55
 DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
+# Rip-fade (mirror of dip-buy): fade the CALL WALL with puts in a pinning regime
+RIP_FADE_NEAR      = 0.50  # spot within $ below the call wall counts as "at" it
+RIP_FADE_MAX_BREAK = 0.30  # if spot breaks above the wall by more than this, it's a breakout — don't fade
+RIP_FADE_MIN_ROOM  = 1.50  # need $ of downside to max pain to make the fade worth it
 
 # ── Creator-derived constants ─────────────────────────────────────────────────
 # Whaley: IV beats realized vol ~78-85% of the time — use this as premium gate
@@ -697,6 +701,38 @@ def main():
     # GEX pattern analysis + dealer flow (needed by the dip-buy override below)
     gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
 
+    # ── Rip-fade override (the mirror of the dip-buy) ──
+    # In a positive-gamma PIN regime, price that has tagged the CALL WALL while
+    # sitting extended ABOVE max pain tends to revert DOWN toward the pin — a PUT
+    # setup, even though it's above the flip. Tightly gated; every later gate
+    # (OPEX, monthly wall, vanna, SPX confirm, confidence) still applies, so it
+    # only fires when the rest of the procedure also supports a put.
+    rip_fade = False
+    if direction == "call":
+        cw = gex_features.get("call_wall", 0)
+        # Max pain (the revert magnet) from the ATM chain OI.
+        _all_k = sorted(set(float(o["strike_price"]) for o in calls) |
+                        set(float(o["strike_price"]) for o in puts))
+        _coi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in calls}
+        _poi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in puts}
+        max_pain, _best = None, None
+        for _k in _all_k:
+            _pay = (sum(_coi.get(s, 0) * max(0.0, _k - s) for s in _all_k) +
+                    sum(_poi.get(s, 0) * max(0.0, s - _k) for s in _all_k))
+            if _best is None or _pay < _best:
+                _best, max_pain = _pay, _k
+        _vix_prev = get_vix_prev_close()
+        _vix_calm = (_vix_prev is None) or (vix <= _vix_prev * 1.02)
+        if (cw and (cw - RIP_FADE_NEAR) <= spot <= (cw + RIP_FADE_MAX_BREAK)   # AT the call wall
+                and max_pain and (spot - max_pain) >= RIP_FADE_MIN_ROOM        # extended above the pin
+                and _vix_calm                                                  # vol flat/falling
+                and king_gex >= 0):                                           # positive gamma → pinning
+            direction, pool, target = "put", puts, int(round(spot)) - 1
+            rip_fade = True
+            log.info(f"RIP-FADE OVERRIDE: SPY ${spot:.2f} AT call wall ${cw:.0f}, extended "
+                     f"${spot-max_pain:.1f} above max pain ${max_pain:.0f}, VIX calm → fade DOWN "
+                     f"with PUT (target {target})")
+
     # Gate 5 — Regime confirm (price vs prev close)
     if direction == "call" and spot < prev_close - 0.50:
         # Dip-buy override: on a positive-gamma (pinning) day a dip below prev
@@ -722,7 +758,11 @@ def main():
                         f"above_putwall={bool(put_wall and spot>put_wall)}, vix_calm={vix_calm})")
             sys.exit(0)
     elif direction == "put" and spot > prev_close + 0.50:
-        log.warning(f"GATE 5 BLOCKED: GEX=PUT but SPY ${spot:.2f} bullish vs prev ${prev_close:.2f}"); sys.exit(0)
+        if rip_fade:
+            log.info(f"GATE 5 RIP-FADE OVERRIDE: PUT above prev close ${prev_close:.2f} is intentional "
+                     f"(fading the call wall back to max pain)")
+        else:
+            log.warning(f"GATE 5 BLOCKED: GEX=PUT but SPY ${spot:.2f} bullish vs prev ${prev_close:.2f}"); sys.exit(0)
     else:
         log.info(f"GATE 5 PASS: regime confirms {direction.upper()} (spot=${spot:.2f} prev=${prev_close:.2f})")
 
@@ -732,9 +772,14 @@ def main():
         log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} below gamma flip ${gamma_flip:.0f} — no calls")
         sys.exit(0)
     if direction == "put" and spot > gamma_flip + 1.0:
-        log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} above gamma flip ${gamma_flip:.0f} — no puts")
-        sys.exit(0)
-    log.info(f"GATE 6 PASS: gamma flip ${gamma_flip:.0f} supports {direction.upper()}")
+        if rip_fade:
+            log.info(f"GATE 6 RIP-FADE OVERRIDE: PUT above the flip ${gamma_flip:.0f} is intentional "
+                     f"(pin-range mean-reversion fade of the call wall)")
+        else:
+            log.warning(f"GATE 6 BLOCKED: SPY ${spot:.2f} above gamma flip ${gamma_flip:.0f} — no puts")
+            sys.exit(0)
+    else:
+        log.info(f"GATE 6 PASS: gamma flip ${gamma_flip:.0f} supports {direction.upper()}")
 
     # Gate 6b — OPEX gravity (Galai: OI chain IS the market forecast)
     opex_ok, opex_adj, opex_note = opex_gravity_check(spot, direction)
