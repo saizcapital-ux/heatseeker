@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEATSEEKER</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0a0c10; --card:#141824; --card2:#1a1f2e; --border:#232a3d;
+  --green:#00d084; --red:#ff3b5c; --yellow:#f5c842; --blue:#4488ff; --muted:#7683a0; --text:#e6e9f0;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+html,body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; -webkit-font-smoothing:antialiased; }
+.wrap { max-width:540px; margin:0 auto; padding:16px 16px 40px; }
+
+/* Top bar */
+.top { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.brand { font-size:15px; font-weight:800; letter-spacing:3px; color:var(--green); }
+.top-right { display:flex; align-items:center; gap:12px; }
+.live { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); font-weight:600; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+.pro-link { font-size:11px; color:var(--muted); text-decoration:none; border:1px solid var(--border); padding:5px 10px; border-radius:20px; font-weight:600; }
+.pro-link:hover { color:var(--text); border-color:var(--muted); }
+
+/* Money strip */
+.money { display:flex; gap:12px; margin-bottom:16px; }
+.money-card { flex:1; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; }
+.money-label { font-size:12px; color:var(--muted); font-weight:600; margin-bottom:6px; }
+.money-val { font-size:26px; font-weight:800; letter-spacing:-.5px; }
+.money-sub { font-size:12px; margin-top:3px; font-weight:600; }
+.pos { color:var(--green); } .neg { color:var(--red); } .mut { color:var(--muted); }
+
+/* HERO — the one answer */
+.hero { border-radius:22px; padding:26px 22px; text-align:center; margin-bottom:16px; border:2px solid var(--border); background:var(--card); transition:all .3s; }
+.hero.go   { background:linear-gradient(160deg,rgba(0,208,132,.16),rgba(0,208,132,.04)); border-color:rgba(0,208,132,.5); }
+.hero.wait { background:linear-gradient(160deg,rgba(245,200,66,.12),rgba(245,200,66,.03)); border-color:rgba(245,200,66,.4); }
+.hero.trade{ background:linear-gradient(160deg,rgba(68,136,255,.16),rgba(68,136,255,.04)); border-color:rgba(68,136,255,.5); }
+.hero.off  { background:var(--card); border-color:var(--border); }
+.hero-emoji { font-size:52px; line-height:1; margin-bottom:10px; }
+.hero-title { font-size:26px; font-weight:800; letter-spacing:-.5px; margin-bottom:8px; }
+.hero.go .hero-title{color:var(--green);} .hero.wait .hero-title{color:var(--yellow);} .hero.trade .hero-title{color:var(--blue);} .hero.off .hero-title{color:var(--muted);}
+.hero-sub { font-size:15px; color:var(--text); line-height:1.5; opacity:.92; max-width:400px; margin:0 auto; }
+.hero-pill { display:inline-block; margin-top:14px; font-size:13px; font-weight:700; padding:7px 16px; border-radius:20px; background:rgba(255,255,255,.06); }
+
+/* Position (when in a trade) */
+.hero-pnl { font-size:34px; font-weight:800; margin:6px 0; }
+.hero-bar { height:8px; background:rgba(255,255,255,.1); border-radius:5px; overflow:hidden; margin:14px auto 4px; max-width:300px; }
+.hero-bar-f { height:100%; border-radius:5px; transition:width .4s; }
+
+/* Simple tiles */
+.tiles { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px; }
+.tile { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 10px; text-align:center; }
+.tile-emoji { font-size:22px; margin-bottom:4px; }
+.tile-val { font-size:15px; font-weight:800; margin-bottom:2px; }
+.tile-label { font-size:10px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+
+/* Bot line */
+.botline { display:flex; align-items:center; gap:12px; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:16px; }
+.botline-emoji { font-size:26px; }
+.botline-txt { flex:1; font-size:13px; line-height:1.45; }
+.botline-txt b { color:var(--text); }
+
+/* Section */
+.sec-title { font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:1px; margin:0 4px 10px; }
+.feed { display:flex; flex-direction:column; gap:8px; }
+.feed-row { display:flex; align-items:center; gap:12px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+.feed-ic { width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.feed-ic.win{background:rgba(0,208,132,.15);} .feed-ic.loss{background:rgba(255,59,92,.15);} .feed-ic.open{background:rgba(245,200,66,.15);}
+.feed-main { flex:1; }
+.feed-t1 { font-size:13px; font-weight:600; }
+.feed-t2 { font-size:11px; color:var(--muted); margin-top:1px; }
+.feed-amt { font-size:15px; font-weight:800; }
+.feed-empty { text-align:center; color:var(--muted); font-size:13px; padding:20px; background:var(--card); border:1px solid var(--border); border-radius:12px; }
+
+.disclaimer { margin-top:20px; font-size:11px; color:var(--muted); text-align:center; line-height:1.5; opacity:.8; }
+.updated { text-align:center; font-size:10px; color:var(--muted); margin-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">HEATSEEKER</div>
+    <div class="top-right">
+      <div class="live"><span class="dot"></span>LIVE</div>
+      <a class="pro-link" href="/pro">Pro view →</a>
+    </div>
+  </div>
+
+  <!-- Money -->
+  <div class="money">
+    <div class="money-card">
+      <div class="money-label">💰 Account</div>
+      <div class="money-val" id="m-bal">$--</div>
+      <div class="money-sub mut" id="m-bal-sub">cash</div>
+    </div>
+    <div class="money-card">
+      <div class="money-label">📊 Today</div>
+      <div class="money-val" id="m-pnl">--</div>
+      <div class="money-sub mut" id="m-pnl-sub">profit / loss</div>
+    </div>
+  </div>
+
+  <!-- HERO: the one answer -->
+  <div class="hero off" id="hero">
+    <div class="hero-emoji" id="hero-emoji">⏳</div>
+    <div class="hero-title" id="hero-title">Loading…</div>
+    <div class="hero-sub" id="hero-sub">Getting the latest from the market.</div>
+    <div id="hero-extra"></div>
+  </div>
+
+  <!-- Simple tiles -->
+  <div class="tiles">
+    <div class="tile">
+      <div class="tile-emoji" id="t-spy-emoji">📈</div>
+      <div class="tile-val" id="t-spy">$--</div>
+      <div class="tile-label">SPY Price</div>
+    </div>
+    <div class="tile">
+      <div class="tile-emoji" id="t-mood-emoji">🌤️</div>
+      <div class="tile-val" id="t-mood">--</div>
+      <div class="tile-label">Market Mood</div>
+    </div>
+    <div class="tile">
+      <div class="tile-emoji" id="t-money-emoji">🏦</div>
+      <div class="tile-val" id="t-money">--</div>
+      <div class="tile-label">Big Money</div>
+    </div>
+  </div>
+
+  <!-- Bot line -->
+  <div class="botline">
+    <div class="botline-emoji" id="bot-emoji">🤖</div>
+    <div class="botline-txt" id="bot-txt">Starting up…</div>
+  </div>
+
+  <!-- Recent trades -->
+  <div class="sec-title">Recent Trades</div>
+  <div class="feed" id="feed"><div class="feed-empty">No trades yet.</div></div>
+
+  <div class="disclaimer" id="disclaimer">
+    ⚠️ This bot trades <b>real money</b> automatically using 0DTE options — one of the riskiest trades there is. You can lose your whole stake fast.
+  </div>
+  <div class="updated" id="updated"></div>
+
+</div>
+
+<script>
+function money(n){ return (n<0?'-$':'$')+Math.abs(n).toFixed(2); }
+
+function dirWord(dir){
+  dir=(dir||'').toLowerCase();
+  if(dir==='call'||dir==='long'||dir==='bullish') return {word:'CALL', bet:'betting SPY goes UP ↑', up:true};
+  if(dir==='put' ||dir==='short'||dir==='bearish') return {word:'PUT',  bet:'betting SPY goes DOWN ↓', up:false};
+  return {word:'', bet:'', up:null};
+}
+
+// Translate a blocked gate into plain English
+function whyWaiting(d){
+  var gates=d.gates||[];
+  function g(name){ return gates.find(function(x){return x.name===name;}); }
+  var acc=g('Account'), sig=g('Signal'), reg=g('Regime'), spx=g('SPX Confirm');
+  // priority order of reasons a normal person cares about
+  if(reg && !reg.ok) return "The market's too wild right now — too risky to jump in.";
+  if(spx && !spx.ok) return "The big institutional money is betting the other way. Better to sit this one out.";
+  if(sig && !sig.ok) return "There's no clear direction yet — the market can't make up its mind.";
+  if(acc && !acc.ok){
+    var w=(acc.why||'').toLowerCase();
+    if(w.indexOf('in position')>-1) return "Already in a trade — the bot won't double up.";
+    if(w.indexOf('monitor')>-1 || w.indexOf('manage')>-1) return "It's past the bot's entry window (it only opens trades 9:45am–12:30pm).";
+    if(w.indexOf('premarket')>-1) return "Market hasn't opened yet.";
+    if(w.indexOf('closed')>-1) return "The market is closed.";
+    return "Conditions for a new trade aren't met yet.";
+  }
+  return "The bot is being patient and waiting for a better setup.";
+}
+
+function nextScanText(){
+  var now=new Date(), et=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var m=et.getMinutes(), s=et.getSeconds(), toNext=((15-(m%15))%15)*60 - s; if(toNext<=0) toNext+=900;
+  var mm=Math.floor(toNext/60);
+  return 'Next market check in about '+mm+' min.';
+}
+
+function setHero(cls,emoji,title,sub,extra){
+  var h=document.getElementById('hero');
+  h.className='hero '+cls;
+  document.getElementById('hero-emoji').textContent=emoji;
+  document.getElementById('hero-title').textContent=title;
+  document.getElementById('hero-sub').innerHTML=sub;
+  document.getElementById('hero-extra').innerHTML=extra||'';
+}
+
+function render(d){
+  // Money
+  document.getElementById('m-bal').textContent = d.balance!=null ? money(d.balance) : '$--';
+  var pnl=d.total_pnl||0, pe=document.getElementById('m-pnl');
+  pe.textContent=(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2);
+  pe.className='money-val '+(pnl>0?'pos':pnl<0?'neg':'');
+  document.getElementById('m-pnl-sub').textContent = pnl>0?'in profit 🎉':pnl<0?'down today':'flat';
+
+  // SPY tile
+  var spy=d.spot, spyEl=document.getElementById('t-spy');
+  spyEl.textContent = spy?('$'+spy.toFixed(2)):'$--';
+  if(spy && d.prev_close){
+    var up=spy>=d.prev_close, pct=((spy-d.prev_close)/d.prev_close*100);
+    document.getElementById('t-spy-emoji').textContent = up?'📈':'📉';
+    spyEl.className='tile-val '+(up?'pos':'neg');
+    spyEl.textContent='$'+spy.toFixed(2)+' '+(up?'▲':'▼')+Math.abs(pct).toFixed(1)+'%';
+  }
+
+  // Market mood (from net gamma) — calm vs wild
+  var ng=d.net_gex_total, me=document.getElementById('t-mood'), mem=document.getElementById('t-mood-emoji');
+  if(ng!=null){
+    if(ng>=0){ me.textContent='Calm'; mem.textContent='😌'; me.className='tile-val pos'; }
+    else     { me.textContent='Choppy'; mem.textContent='⚡'; me.className='tile-val neg'; }
+  } else { me.textContent='--'; }
+
+  // Big money (SPX agreement)
+  var bm=document.getElementById('t-money'), bme=document.getElementById('t-money-emoji');
+  if(d.spx_confirm==='ALIGNED'){ bm.textContent='Agrees'; bme.textContent='👍'; bm.className='tile-val pos'; }
+  else if(d.spx_confirm==='DIVERGENT'){ bm.textContent='Against'; bme.textContent='👎'; bm.className='tile-val neg'; }
+  else { bm.textContent='Neutral'; bme.textContent='🏦'; bm.className='tile-val mut'; }
+
+  // ── HERO state machine ──
+  var phase=d.bot_phase, pos=(d.open_positions||[])[0];
+  if(phase==='closed' || phase==='premarket'){
+    setHero('off','😴','Market Closed',
+      'The bot is resting. It trades automatically on weekdays, 9:30am–4:00pm ET.');
+  } else if(pos){
+    var dw=dirWord(pos.opt_type||d.direction), p=pos.pnl_usd||0, pct=pos.pnl_pct||0;
+    var win=p>=0, col=win?'var(--green)':'var(--red)';
+    var bar='<div class="hero-bar"><div class="hero-bar-f" style="width:'+Math.min(100,win?pct:Math.abs(pct)*2)+'%;background:'+col+'"></div></div>';
+    setHero('trade','📊','In a Trade',
+      'The bot bought a <b>'+(dw.word||'position')+'</b> ('+dw.bet+') and is holding it. It will sell automatically at the right time — you don\'t need to do anything.',
+      '<div class="hero-pnl" style="color:'+col+'">'+(win?'+':'')+money(p)+' <span style="font-size:18px">('+(pct>=0?'+':'')+pct+'%)</span></div>'+bar);
+  } else if(d.all_go){
+    var dw2=dirWord(d.direction);
+    setHero('go','🟢','Trade Signal!',
+      'Everything lines up — the bot is buying a <b>'+dw2.word+'</b> right now, '+dw2.bet+'.',
+      '<div class="hero-pill" style="color:var(--green)">🤖 Bot is entering automatically</div>');
+  } else {
+    setHero('wait','🟡','No Trade — Waiting',
+      whyWaiting(d),
+      '<div class="hero-pill" style="color:var(--yellow)">🤖 Bot is watching, doing nothing</div>');
+  }
+
+  // Bot line
+  var be=document.getElementById('bot-emoji'), bt=document.getElementById('bot-txt');
+  var PH={entry:'🎯',manage:'🛡️',force_close:'⏰',monitor:'👁️',premarket:'🌅',closed:'💤'};
+  be.textContent=PH[phase]||'🤖';
+  var line='';
+  if(phase==='closed'||phase==='premarket') line='<b>Bot is off.</b> It only trades during market hours.';
+  else if(pos) line='<b>Bot is managing your trade.</b> It watches the price and sells to lock in gains or cut losses — hands-free.';
+  else if(phase==='entry') line='<b>Bot is hunting for a trade.</b> '+nextScanText();
+  else line='<b>Bot is monitoring.</b> It\'s past the entry window, so it won\'t open new trades today. '+nextScanText();
+  bt.innerHTML=line;
+
+  // Recent trades → plain English
+  var feed=document.getElementById('feed'), items=(d.trades||[]).slice(-4).reverse();
+  if(!items.length){ feed.innerHTML='<div class="feed-empty">No trades yet — the bot is waiting for its first setup.</div>'; }
+  else {
+    feed.innerHTML=items.map(function(t){
+      var has=t.pnl_usd!=null, win=has&&t.pnl_usd>=0, cls=!has?'open':win?'win':'loss';
+      var ic=!has?'⏳':win?'✅':'❌';
+      var dw=dirWord(t.opt_type);
+      var t1=(has?'Sold':'Bought')+' a '+(dw.word||'trade')+(t.strike?' ($'+t.strike+')':'');
+      var t2=t.date||'';
+      var amt=has?((t.pnl_usd>=0?'+':'')+money(t.pnl_usd)):'open';
+      var amtcls=!has?'mut':win?'pos':'neg';
+      return '<div class="feed-row"><div class="feed-ic '+cls+'">'+ic+'</div>'
+        +'<div class="feed-main"><div class="feed-t1">'+t1+'</div><div class="feed-t2">'+t2+(has?(' · '+(win?'profit':'loss')):' · still open')+'</div></div>'
+        +'<div class="feed-amt '+amtcls+'">'+amt+'</div></div>';
+    }).join('');
+  }
+
+  document.getElementById('updated').textContent = 'Updated '+(d.market_updated||d.ts||'')+' · data '+(d.gex_source==='robinhood'?'live':'15-min delayed');
+}
+
+function poll(){
+  fetch('/api/state').then(function(r){return r.json();}).then(render).catch(function(e){console.error(e);});
+}
+poll(); setInterval(poll,20000);
+</script>
+</body>
+</html>

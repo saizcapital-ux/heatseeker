@@ -534,6 +534,11 @@ threading.Thread(target=_ticker, daemon=True).start()
 # ── routes ───────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
+    # Default to the plain-English "simple" view; full quant terminal at /pro.
+    return render_template("simple.html")
+
+@app.route("/pro")
+def pro():
     return render_template("dashboard.html")
 
 @app.route("/api/state")
