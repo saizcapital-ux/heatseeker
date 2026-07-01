@@ -35,6 +35,11 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .live-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 2s ease-in-out infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 #clock { font-size:11px; color:var(--muted); min-width:78px; text-align:right; }
+.sess-badge { font-size:9px; font-weight:700; letter-spacing:1px; padding:3px 7px; border-radius:4px; border:1px solid var(--border); }
+.sess-badge.rth{background:rgba(0,208,132,.14);color:var(--green);border-color:rgba(0,208,132,.3);}
+.sess-badge.pre{background:rgba(245,200,66,.14);color:var(--yellow);border-color:rgba(245,200,66,.3);}
+.sess-badge.ah{background:rgba(68,136,255,.14);color:var(--blue);border-color:rgba(68,136,255,.3);}
+.sess-badge.closed{background:rgba(74,84,112,.14);color:var(--muted);}
 
 /* BOT STRIP */
 #bot-strip { height:42px; min-height:42px; display:flex; align-items:center; gap:14px; padding:0 14px; flex-shrink:0; border-bottom:1px solid var(--border); background:linear-gradient(90deg,rgba(68,136,255,.06),transparent); }
@@ -201,6 +206,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="h-right">
     <div class="datafeed" id="datafeed">feed: <b>--</b></div>
     <a href="/" style="font-size:10px;color:var(--muted);text-decoration:none;border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-weight:600">◂ Simple</a>
+    <span class="sess-badge" id="sess-badge">--</span>
     <span class="rh-badge err" id="rh-badge">RH --</span>
     <div class="live-dot"></div>
     <span id="clock">--</span>
@@ -311,7 +317,21 @@ var C = { green:'#00d084', red:'#ff3355', blue:'#4488ff', yellow:'#f5c842', oran
 var lastState = null, lastHistory = [], activeTab = 'cloud', chartMode = null;
 var PHASE_ICON = { entry:'🎯', manage:'🛡️', force_close:'⏰', monitor:'👁️', premarket:'🌅', closed:'💤' };
 
-function updateClock(){ var o={timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}; document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US',o)+' ET'; }
+function marketSession(){
+  var et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var day=et.getDay(), min=et.getHours()*60+et.getMinutes();
+  if(day===0||day===6) return {code:'CLOSED',cls:'closed'};
+  if(min>=570&&min<960)  return {code:'RTH · OPEN',cls:'rth'};      // 9:30–16:00
+  if(min>=240&&min<570)  return {code:'PRE-MARKET',cls:'pre'};      // 4:00–9:30
+  if(min>=960&&min<1200) return {code:'AFTER HRS',cls:'ah'};        // 16:00–20:00
+  return {code:'CLOSED',cls:'closed'};
+}
+function updateClock(){
+  var o={timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false};
+  document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US',o)+' ET';
+  var s=marketSession(), b=document.getElementById('sess-badge');
+  if(b){ b.textContent=s.code; b.className='sess-badge '+s.cls; }
+}
 setInterval(updateClock,1000); updateClock();
 
 /* Tabs */

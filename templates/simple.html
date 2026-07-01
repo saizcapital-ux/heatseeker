@@ -23,6 +23,11 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
 .pro-link { font-size:11px; color:var(--muted); text-decoration:none; border:1px solid var(--border); padding:5px 10px; border-radius:20px; font-weight:600; }
 .pro-link:hover { color:var(--text); border-color:var(--muted); }
+.sess-badge { font-size:10px; font-weight:700; letter-spacing:.5px; padding:4px 9px; border-radius:20px; border:1px solid var(--border); }
+.sess-badge.rth{background:rgba(0,208,132,.14);color:var(--green);border-color:rgba(0,208,132,.3);}
+.sess-badge.pre{background:rgba(245,200,66,.14);color:var(--yellow);border-color:rgba(245,200,66,.3);}
+.sess-badge.ah{background:rgba(68,136,255,.14);color:var(--blue);border-color:rgba(68,136,255,.3);}
+.sess-badge.closed{background:rgba(118,131,160,.14);color:var(--muted);}
 
 /* Money strip */
 .money { display:flex; gap:12px; margin-bottom:16px; }
@@ -84,6 +89,7 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
   <div class="top">
     <div class="brand">HEATSEEKER</div>
     <div class="top-right">
+      <span class="sess-badge" id="sess-badge">--</span>
       <div class="live"><span class="dot"></span>LIVE</div>
       <a class="pro-link" href="/pro">Pro view →</a>
     </div>
@@ -116,7 +122,7 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
     <div class="tile">
       <div class="tile-emoji" id="t-spy-emoji">📈</div>
       <div class="tile-val" id="t-spy">$--</div>
-      <div class="tile-label">SPY Price</div>
+      <div class="tile-label" id="t-spy-label">SPY Price</div>
     </div>
     <div class="tile">
       <div class="tile-emoji" id="t-mood-emoji">🌤️</div>
@@ -149,6 +155,22 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
 
 <script>
 function money(n){ return (n<0?'-$':'$')+Math.abs(n).toFixed(2); }
+
+function marketSession(){
+  var et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var day=et.getDay(), min=et.getHours()*60+et.getMinutes();
+  if(day===0||day===6) return {code:'CLOSED',cls:'closed',label:'SPY Price'};
+  if(min>=570&&min<960)  return {code:'MARKET OPEN',cls:'rth',label:'SPY Price'};
+  if(min>=240&&min<570)  return {code:'PRE-MARKET',cls:'pre',label:'SPY · pre-market'};
+  if(min>=960&&min<1200) return {code:'AFTER HOURS',cls:'ah',label:'SPY · after hours'};
+  return {code:'CLOSED',cls:'closed',label:'SPY Price'};
+}
+function updateSession(){
+  var s=marketSession(), b=document.getElementById('sess-badge');
+  if(b){ b.textContent=s.code; b.className='sess-badge '+s.cls; }
+  var lbl=document.getElementById('t-spy-label'); if(lbl) lbl.textContent=s.label;
+}
+setInterval(updateSession,15000); updateSession();
 
 function dirWord(dir){
   dir=(dir||'').toLowerCase();
