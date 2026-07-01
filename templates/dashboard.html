@@ -612,13 +612,21 @@ function renderCloud(d){
   var xR = hasHisto ? 0.72 : 1.0;
 
   var shapes=[], annos=[];
+  var netOf=function(s){return s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0);};
+  // Linear-interpolate net GEX at an arbitrary price; fades to 0 outside the ladder.
+  function gexAt(xs,ys,x){
+    if(!xs.length||x<=xs[0]||x>=xs[xs.length-1]) return 0;
+    for(var i=1;i<xs.length;i++){ if(x<=xs[i]){ var t=(x-xs[i-1])/((xs[i]-xs[i-1])||1); return ys[i-1]+(ys[i]-ys[i-1])*t; } }
+    return 0;
+  }
 
-  // ── Subtle GEX "cloud" wash behind price (kept light so candles stay readable) ──
-  if(gex.length&&bandRef){
+  // Blocky per-strike wash — only used as a fallback when there are no candles
+  // (the candles branch draws a smooth gradient heatmap instead).
+  if(gex.length&&bandRef&&!candles.length){
     var win=gex.filter(function(s){return Math.abs(s.strike-bandRef)<=16;}), mg=0;
-    win.forEach(function(s){var m=Math.abs(s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0));if(m>mg)mg=m;}); if(!mg)mg=1;
-    win.forEach(function(s){ var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0); if(Math.abs(net)<0.03)return;
-      var op=0.04+0.16*(Math.abs(net)/mg), half=Math.max(0.3,Math.abs(net)/mg*1.4);
+    win.forEach(function(s){var m=Math.abs(netOf(s));if(m>mg)mg=m;}); if(!mg)mg=1;
+    win.forEach(function(s){ var net=netOf(s); if(Math.abs(net)<0.03)return;
+      var op=0.05+0.20*(Math.abs(net)/mg), half=Math.max(0.3,Math.abs(net)/mg*1.4);
       shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:xR,y0:s.strike-half,y1:s.strike+half,fillcolor:(net>0?'rgba(0,208,132,':'rgba(255,51,85,')+op+')',line:{width:0},layer:'below'});});
   }
 
@@ -715,6 +723,19 @@ function renderCloud(d){
     drawLevels(yLo,yHi);
     traces=[cT,vT];
     if(hasHisto) traces.push(gexBar);
+
+    // ── Smooth gradient GEX cloud (interpolated heatmap behind price) ──
+    if(gex.length){
+      var gs=gex.slice().sort(function(a,b){return a.strike-b.strike;});
+      var xs=gs.map(function(s){return s.strike;}), ys=gs.map(netOf);
+      var mN=0; ys.forEach(function(v){if(Math.abs(v)>mN)mN=Math.abs(v);}); if(!mN)mN=1;
+      var N=90, yg=[], zg=[];
+      for(var gi=0;gi<N;gi++){ var yv=yLo+(yHi-yLo)*gi/(N-1); yg.push(yv); var zv=gexAt(xs,ys,yv); zg.push([zv,zv]); }
+      var cloudHM={type:'heatmap',x:[times[0],times[times.length-1]],y:yg,z:zg,xaxis:'x',yaxis:'y',
+        zmin:-mN,zmax:mN,zsmooth:'best',showscale:false,hoverinfo:'skip',
+        colorscale:[[0,'rgba(255,51,85,0.55)'],[0.42,'rgba(255,51,85,0.10)'],[0.5,'rgba(10,12,16,0)'],[0.58,'rgba(0,208,132,0.10)'],[1,'rgba(0,208,132,0.55)']]};
+      traces.unshift(cloudHM);   // first = drawn behind the candles
+    }
   } else if(hist.length>=2){
     var hx=hist.map(function(p){return p.t;});
     var sp=hist.map(function(p){return p.spot;}).filter(Boolean);
