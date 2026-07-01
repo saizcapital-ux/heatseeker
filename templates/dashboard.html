@@ -189,6 +189,12 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .act-date { font-size:9px; color:var(--muted); min-width:42px; } .act-desc { flex:1; font-size:10px; }
 .act-pnl { font-size:10px; font-weight:700; } .act-pnl.pos{color:var(--green);} .act-pnl.neg{color:var(--red);}
 .act-empty { font-size:10px; color:var(--muted); padding:6px; }
+.rtabs { display:flex; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); z-index:2; }
+.rtab { flex:1; padding:8px 2px; font-size:9.5px; font-weight:600; color:var(--muted); background:none; border:none; border-right:1px solid var(--border); cursor:pointer; letter-spacing:.3px; }
+.rtab:last-child { border-right:none; }
+.rtab:hover { color:var(--text); background:rgba(255,255,255,.02); }
+.rtab.active { color:var(--text); border-bottom:2px solid var(--green); margin-bottom:-1px; }
+.rpanel { padding:10px 11px; }
 #share-text { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--font); font-size:11px; line-height:1.45; padding:8px; resize:vertical; }
 .share-btns { display:flex; gap:6px; margin-top:6px; }
 .sbtn { flex:1; padding:7px; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-family:var(--font); font-size:11px; font-weight:700; cursor:pointer; }
@@ -267,6 +273,11 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   </div>
 
   <div id="col-right">
+    <!-- Pinned: your position + what the bot is doing -->
+    <div class="r-sec">
+      <div class="r-hdr"><span>Open Positions</span><span class="sub" id="pos-count">0</span></div>
+      <div id="pos-area"><div id="pos-empty">Flat — no open positions</div></div>
+    </div>
     <div class="r-sec">
       <div class="r-hdr"><span>🧠 Bot Brain — Entry Gates</span><span class="pill hold" id="brain-pill" style="display:none"></span></div>
       <div id="gates"></div>
@@ -274,20 +285,26 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
       <div class="reasons" id="reasons"></div>
       <div class="countdown" id="countdown"></div>
     </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>⚡ Live Events</span></div>
+
+    <!-- Tabbed reference panels -->
+    <div class="rtabs">
+      <button class="rtab active" data-rt="journal">📋 Trades</button>
+      <button class="rtab" data-rt="events">⚡ Events</button>
+      <button class="rtab" data-rt="flow">🌊 Flow</button>
+      <button class="rtab" data-rt="account">💰 Acct</button>
+      <button class="rtab" data-rt="share">𝕏 Share</button>
+    </div>
+
+    <div class="rpanel" data-rp="journal">
+      <div class="act-feed" id="act-feed"><div class="act-empty">No trades yet</div></div>
+    </div>
+    <div class="rpanel" data-rp="events" style="display:none">
       <div class="ev-feed" id="events"><div class="ev-empty">No events yet today.</div></div>
     </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>Open Positions</span><span class="sub" id="pos-count">0</span></div>
-      <div id="pos-area"><div id="pos-empty">Flat — no open positions</div></div>
-    </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>Flow — Top Premium Prints</span></div>
+    <div class="rpanel" data-rp="flow" style="display:none">
       <div id="flow-area"><div class="flow-empty">Flow loads with GEX scan.</div></div>
     </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>Account</span></div>
+    <div class="rpanel" data-rp="account" style="display:none">
       <div class="stats-grid">
         <div class="stat-cell"><div class="stat-k">Balance</div><div class="stat-v green" id="s-bal">--</div></div>
         <div class="stat-cell"><div class="stat-k">Realized P&amp;L</div><div class="stat-v" id="s-pnl">--</div></div>
@@ -299,12 +316,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
         <svg id="equity-svg" preserveAspectRatio="none" viewBox="0 0 100 44"></svg>
       </div>
     </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>Trade Journal</span></div>
-      <div class="act-feed" id="act-feed"><div class="act-empty">No trades yet</div></div>
-    </div>
-    <div class="r-sec">
-      <div class="r-hdr"><span>📣 Share Signal to X</span></div>
+    <div class="rpanel" data-rp="share" style="display:none">
       <textarea id="share-text" rows="6" spellcheck="false"></textarea>
       <div class="share-btns">
         <button class="sbtn" id="copy-btn">📋 Copy</button>
@@ -865,6 +877,15 @@ function composeSignal(d){
   });
   if(box) box.addEventListener('input', function(){ box.dataset.edited='1'; });
 })();
+
+// Right-column sub-tabs (Trades / Events / Flow / Account / Share)
+document.querySelectorAll('.rtab').forEach(function(t){
+  t.addEventListener('click', function(){
+    document.querySelectorAll('.rtab').forEach(function(x){x.classList.remove('active');});
+    t.classList.add('active');
+    document.querySelectorAll('.rpanel').forEach(function(p){ p.style.display = (p.dataset.rp===t.dataset.rt)?'block':'none'; });
+  });
+});
 
 poll(); setInterval(poll,20000);
 </script>
