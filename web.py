@@ -401,8 +401,31 @@ def _ticker():
                             patch["ts_slope"] = slope
                             patch["ts_label"] = "deep_contango" if slope > 0.10 else "contango" if slope > 0 else "backwardation"
                             break
+                    # Keyless intraday candles (incl. pre/post) so the chart is
+                    # populated even when Robinhood isn't logged in.
+                    try:
+                        df = yf.Ticker("SPY").history(period="1d", interval="5m", prepost=True)
+                        candles = []
+                        for idx, row in df.iterrows():
+                            o, h, l, c = row.get("Open"), row.get("High"), row.get("Low"), row.get("Close")
+                            if not (o and h and l and c) or o != o:  # skip NaN/zero rows
+                                continue
+                            try:
+                                et = idx.tz_convert(ET)
+                            except Exception:
+                                et = idx
+                            m = et.hour * 60 + et.minute
+                            sess = "reg" if 570 <= m < 960 else ("pre" if m < 570 else "post")
+                            candles.append({"t": idx.isoformat(), "o": round(float(o), 2),
+                                            "h": round(float(h), 2), "l": round(float(l), 2),
+                                            "c": round(float(c), 2), "v": int(row.get("Volume") or 0), "s": sess})
+                        if candles:
+                            patch["candles"] = candles
+                            log.info(f"yfinance candles: {len(candles)} bars")
+                    except Exception as ce:
+                        log.debug(f"yfinance candle error: {ce}")
                     _write_state(patch)
-                    log.info(f"yfinance tick SPY={patch.get('spot')} VIX={patch.get('vix')}")
+                    log.info(f"yfinance tick SPY={patch.get('spot')} VIX={patch.get('vix')} candles={len(patch.get('candles',[]))}")
                 except Exception as yfe:
                     log.debug(f"yfinance fallback error: {yfe}")
 
@@ -503,16 +526,22 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
-                # Intraday SPY candles (5-min bars). bounds="trading" includes
-                # pre-market + after-hours so the chart is populated before 9:30.
+                # Intraday SPY candles (5-min bars). Try extended-hours first (so
+                # the chart is populated before 9:30); fall back to regular hours.
+                # Each attempt is guarded independently — a throw on one (e.g. an
+                # older robin_stocks that rejects bounds="trading") must not skip
+                # the others.
                 try:
-                    bars = rh.stocks.get_stock_historicals(
-                        "SPY", interval="5minute", span="day", bounds="trading"
-                    ) or []
-                    if not bars:  # fall back to regular hours if extended is empty
-                        bars = rh.stocks.get_stock_historicals(
-                            "SPY", interval="5minute", span="day"
-                        ) or []
+                    bars = []
+                    for kwargs in ({"bounds": "trading"}, {}):
+                        try:
+                            bars = rh.stocks.get_stock_historicals(
+                                "SPY", interval="5minute", span="day", **kwargs) or []
+                        except Exception as be:
+                            log.debug(f"candle attempt {kwargs} failed: {be}")
+                            bars = []
+                        if bars:
+                            break
                     candles = []
                     for bar in bars:
                         t = bar.get("begins_at", "")
