@@ -43,6 +43,194 @@ def _read_history():
     except Exception:
         return []
 
+# ── CBOE always-on GEX engine ────────────────────────────────────────────────
+# Free, no-key, 15-min-delayed full options chain (same source the bundled
+# gamma-terminal uses). This guarantees the dashboard ALWAYS has real GEX data —
+# even when Robinhood is logged out, the worker is down, or the market is closed.
+CBOE_URL     = "https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json"
+CBOE_VIX_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/_VIX.json"
+CBOE_STRIKE_WINDOW = 25          # strikes within ±$ of spot for the ladder
+CBOE_REFRESH_SEC   = 300         # recompute at most every 5 min
+CBOE_RH_FRESH_SEC  = 960         # treat a Robinhood scan as authoritative for 16 min
+_cboe_last = 0
+
+def _fetch_json(url, timeout=12):
+    import urllib.request
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (HeatseekerTerminal/1.0)",
+        "Accept": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+def _parse_occ(sym):
+    """Parse an OCC option symbol e.g. 'SPY   260701C00745000' → (expiry, type, strike)."""
+    s = (sym or "").replace(" ", "")
+    if len(s) < 15:
+        return None
+    try:
+        strike = int(s[-8:]) / 1000.0
+        typ    = s[-9].upper()            # 'C' or 'P'
+        yymmdd = s[-15:-9]
+        expiry = f"20{yymmdd[0:2]}-{yymmdd[2:4]}-{yymmdd[4:6]}"
+        return expiry, typ, strike
+    except Exception:
+        return None
+
+def _cboe_analytics(payload):
+    """Pure function: CBOE JSON → GEX state patch (ladder, king, flip, walls, max pain).
+    Returns None if the payload has no usable gamma/OI data."""
+    data = (payload or {}).get("data", {}) or {}
+    spot = data.get("current_price") or data.get("close")
+    opts = data.get("options", []) or []
+    if not spot or not opts:
+        return None
+    spot = float(spot)
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+
+    # Group by expiry; pick the soonest expiry that is today-or-later (0DTE when available).
+    by_exp = {}
+    for o in opts:
+        p = _parse_occ(o.get("option"))
+        if not p:
+            continue
+        exp, typ, strike = p
+        by_exp.setdefault(exp, []).append((typ, strike, o))
+    future = sorted(e for e in by_exp if e >= today)
+    if not future:
+        return None
+    exp = future[0]
+    chain = by_exp[exp]
+
+    # Aggregate per strike within the window.
+    calls, puts = {}, {}   # strike -> {oi, gamma, vol}
+    for typ, strike, o in chain:
+        if abs(strike - spot) > CBOE_STRIKE_WINDOW:
+            continue
+        oi = float(o.get("open_interest") or 0)
+        gm = float(o.get("gamma") or 0)
+        vol = float(o.get("volume") or 0)
+        bucket = calls if typ == "C" else puts
+        b = bucket.setdefault(strike, {"oi": 0.0, "gamma": 0.0, "vol": 0.0})
+        b["oi"] += oi; b["gamma"] = gm or b["gamma"]; b["vol"] += vol
+
+    strikes = sorted(set(calls) | set(puts))
+    if not strikes:
+        return None
+
+    def gex(oi, gamma, is_call):
+        return (1 if is_call else -1) * oi * gamma * spot * 100
+
+    ladder, net_total = [], 0.0
+    any_gamma = False
+    for s in strikes:
+        c = calls.get(s, {"oi": 0, "gamma": 0, "vol": 0})
+        p = puts.get(s, {"oi": 0, "gamma": 0, "vol": 0})
+        if c["gamma"] or p["gamma"]:
+            any_gamma = True
+        cg = gex(c["oi"], c["gamma"], True)
+        pg = gex(p["oi"], p["gamma"], False)
+        net_total += (cg + pg) / 1e6
+        ladder.append({
+            "strike":     s,
+            "call_oi":    int(c["oi"]),  "put_oi":  int(p["oi"]),
+            "call_vol":   int(c["vol"]), "put_vol": int(p["vol"]),
+            "call_gex_m": round(cg / 1e6, 3),
+            "put_gex_m":  round(pg / 1e6, 3),
+            "net_gex_m":  round((cg + pg) / 1e6, 3),
+            "call_prem_k": 0.0, "put_prem_k": 0.0,
+        })
+    if not any_gamma:
+        return None   # feed had no greeks — don't overwrite good data with zeros
+
+    # King node = strike with largest |net GEX|
+    king = max(ladder, key=lambda r: abs(r["net_gex_m"]))
+    king_strike = king["strike"]
+    king_gex_m  = king["net_gex_m"]
+
+    # Gamma flip = strike where cumulative net GEX crosses zero
+    cum, prev, gamma_flip = 0.0, None, king_strike
+    for r in ladder:
+        cum += r["net_gex_m"]
+        if prev is not None and ((prev < 0 <= cum) or (prev > 0 >= cum)):
+            gamma_flip = r["strike"]
+        prev = cum
+
+    # Walls = heaviest OI above / below spot
+    calls_above = [(s, calls[s]["oi"]) for s in calls if s > spot]
+    puts_below  = [(s, puts[s]["oi"])  for s in puts  if s < spot]
+    call_wall = max(calls_above, key=lambda x: x[1])[0] if calls_above else None
+    put_wall  = max(puts_below,  key=lambda x: x[1])[0] if puts_below  else None
+
+    # Max pain = strike minimizing total intrinsic payout to holders
+    max_pain, best = None, None
+    for k in strikes:
+        pay = sum(calls.get(s, {}).get("oi", 0) * max(0.0, k - s) for s in strikes) \
+            + sum(puts.get(s, {}).get("oi", 0)  * max(0.0, s - k) for s in strikes)
+        if best is None or pay < best:
+            best, max_pain = pay, k
+
+    total_abs = sum(abs(r["net_gex_m"]) for r in ladder) or 1
+    concentration = abs(king_gex_m) / total_abs
+    direction = "call" if king_gex_m >= 0 else "put"
+
+    return {
+        "spot":          round(spot, 2),
+        "strike_ladder": ladder,
+        "net_gex_total": round(net_total, 2),
+        "king_strike":   king_strike,
+        "king_gex_m":    round(king_gex_m, 2),
+        "gamma_flip":    gamma_flip,
+        "max_pain":      max_pain,
+        "call_wall":     call_wall,
+        "put_wall":      put_wall,
+        "direction":     direction,
+        "confidence":    round(concentration, 3),
+        "gex_source":    "cboe",
+        "gex_ts":        time.time(),
+        "gex_expiry":    exp,
+    }
+
+def _refresh_cboe_gex():
+    """Compute GEX from the CBOE feed and write it as the base layer — unless a
+    fresh Robinhood scan is already authoritative (then only refresh spot/VIX)."""
+    global _cboe_last
+    now = time.time()
+    if now - _cboe_last < CBOE_REFRESH_SEC:
+        return
+    _cboe_last = now
+    try:
+        patch = _cboe_analytics(_fetch_json(CBOE_URL))
+    except Exception as e:
+        log.debug(f"CBOE fetch/parse failed: {e}")
+        return
+    if not patch:
+        return
+    # VIX from CBOE index feed (best-effort)
+    try:
+        vd = (_fetch_json(CBOE_VIX_URL) or {}).get("data", {})
+        vix = vd.get("current_price") or vd.get("close")
+        if vix:
+            patch["vix"] = round(float(vix), 2)
+    except Exception:
+        pass
+
+    st = _read_state()
+    rh_fresh = st.get("gex_source") == "robinhood" and (now - float(st.get("gex_ts") or 0) < CBOE_RH_FRESH_SEC)
+    if rh_fresh:
+        # Robinhood scan owns the GEX picture right now — only touch price/VIX.
+        thin = {"spot": patch["spot"]}
+        if "vix" in patch:
+            thin["vix"] = patch["vix"]
+        _write_state(thin)
+        log.info(f"CBOE tick (RH authoritative): SPY={patch['spot']}")
+    else:
+        patch["last_action"] = st.get("last_action") or \
+            f"GEX from CBOE (15-min delayed) — {patch['direction'].upper()} bias, king ${patch['king_strike']:.0f}"
+        patch["market_updated"] = datetime.now(ET).strftime("%H:%M ET")
+        _write_state(patch)
+        log.info(f"CBOE GEX written: {patch['direction'].upper()} king=${patch['king_strike']:.0f} flip=${patch['gamma_flip']:.0f} strikes={len(patch['strike_ladder'])}")
+
 def _append_history(state):
     """Record an intraday time-series point so the dashboard can show the gamma
     flip / king node migrating relative to spot through the day (the core 0DTE
@@ -100,6 +288,12 @@ def _ticker():
     global _tick_count
     logged_in = False
     while True:
+        # Always-on GEX base layer — runs regardless of Robinhood/login state so
+        # the dashboard is never blank. Self-throttled to every CBOE_REFRESH_SEC.
+        try:
+            _refresh_cboe_gex()
+        except Exception as e:
+            log.debug(f"CBOE refresh error: {e}")
         try:
             import robin_stocks.robinhood as rh
             if not logged_in:
@@ -401,6 +595,8 @@ def api_state():
         "put_vol_total":  g.get("put_vol_total"),
         "top_nodes":      g.get("top_nodes"),
         "net_gex_total":  net_gex_total,
+        "gex_source":     g.get("gex_source"),
+        "gex_expiry":     g.get("gex_expiry"),
         "confidence_reasons": g.get("confidence_reasons", []),
         "conf_pct":       conf_pct,
         "gates":          gates,
@@ -422,6 +618,11 @@ def api_push():
         return jsonify({"error": "unauthorized"}), 401
     data = request.get_json(force=True) or {}
     if data:
+        # A push carrying a real GEX ladder is a live Robinhood scan — mark it
+        # authoritative so the CBOE base layer defers to it for a window.
+        if data.get("strike_ladder"):
+            data["gex_source"] = "robinhood"
+            data["gex_ts"] = time.time()
         _write_state(data)
     return jsonify({"ok": True})
 

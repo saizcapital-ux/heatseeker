@@ -323,9 +323,11 @@ function renderHeader(d){
   pe.textContent=(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2); pe.className='h-val pnl '+(pnl>0?'pos':pnl<0?'neg':'');
   var rh=document.getElementById('rh-badge');
   if(d.rh_logged_in){rh.className='rh-badge ok';rh.textContent='RH LIVE';}else{rh.className='rh-badge err';rh.textContent='RH --';}
-  document.getElementById('datafeed').innerHTML = d.rh_logged_in
-    ? 'feed: <b>Robinhood</b> live<br>GEX scan / 15m · '+(d.market_updated||'')
-    : 'feed: <b>yfinance</b> (RH offline)<br>'+(d.market_updated||'');
+  var gsrc = d.gex_source==='robinhood' ? '<b>Robinhood</b> live GEX'
+           : d.gex_source==='cboe' ? '<b>CBOE</b> GEX (15-min delayed)'
+           : '<b>--</b>';
+  var exp = d.gex_expiry ? ' · exp '+d.gex_expiry.slice(5) : '';
+  document.getElementById('datafeed').innerHTML = 'feed: '+gsrc+'<br>'+(d.market_updated||'')+exp;
 }
 
 function renderBot(d){
@@ -515,31 +517,59 @@ function renderMainChart(d){
 
 function renderCloud(d){
   setLegend('<span><i class="lg-dot" style="background:rgba(0,208,132,.6)"></i>+GEX pin</span><span><i class="lg-dot" style="background:rgba(255,51,85,.6)"></i>−GEX trend</span><span><i class="lg-line" style="border-color:'+C.yellow+'"></i>γ flip</span><span><i class="lg-line" style="border-color:'+C.orange+'"></i>king</span>');
-  var candles=d.candles||[], gex=d.gex_by_strike||[], spot=d.spot;
+  var candles=d.candles||[], gex=d.gex_by_strike||[], spot=d.spot, hist=lastHistory||[];
   var ph=document.getElementById('chart-ph'), ch=document.getElementById('main-chart');
-  if(!candles.length){ph.style.display='flex';ph.innerHTML='GEX Cloud renders during market hours<br><span style="font-size:9px">candles + per-strike dealer gamma</span>';ch.style.display='none';return;}
-  ph.style.display='none';ch.style.display='block';
-  var times=candles.map(function(c){return c.t;});
-  var cT={type:'candlestick',x:times,open:candles.map(function(c){return c.o;}),high:candles.map(function(c){return c.h;}),low:candles.map(function(c){return c.l;}),close:candles.map(function(c){return c.c;}),
-    increasing:{line:{color:C.green,width:1},fillcolor:C.green},decreasing:{line:{color:C.red,width:1},fillcolor:C.red},name:'SPY',hovertemplate:'<b>%{x|%H:%M}</b> O:%{open:.2f} H:%{high:.2f} L:%{low:.2f} C:%{close:.2f}<extra></extra>'};
-  var vols=candles.map(function(c){return c.v||0;}), mv=Math.max.apply(null,vols)||1;
-  var vT={type:'bar',x:times,y:vols,yaxis:'y2',marker:{color:candles.map(function(c){return c.c>=c.o?'rgba(0,208,132,.16)':'rgba(255,51,85,.16)';})},hoverinfo:'skip',showlegend:false};
-  var shapes=[],annos=[];
-  if(gex.length&&spot){
-    var win=gex.filter(function(s){return Math.abs(s.strike-spot)<=16;}), mg=0;
+  // Only truly blank if we have neither a price nor any GEX structure.
+  if(!candles.length && !gex.length && !spot){
+    ph.style.display='flex'; ph.innerHTML='Waiting for first data pull…<br><span style="font-size:9px">CBOE GEX loads within ~5 min</span>'; ch.style.display='none'; return;
+  }
+  ph.style.display='none'; ch.style.display='block';
+
+  var bandRef = spot;
+  if(!bandRef && gex.length){ var ss=gex.map(function(s){return s.strike;}).sort(function(a,b){return a-b;}); bandRef=ss[Math.floor(ss.length/2)]; }
+
+  // Shared GEX bands + key-level lines (work with or without a price series).
+  var shapes=[],annos=[],yvals=[];
+  if(gex.length&&bandRef){
+    var win=gex.filter(function(s){return Math.abs(s.strike-bandRef)<=16;}), mg=0;
     win.forEach(function(s){var m=Math.abs(s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0));if(m>mg)mg=m;}); if(!mg)mg=1;
-    win.forEach(function(s){var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0); if(Math.abs(net)<0.02)return;
+    win.forEach(function(s){ yvals.push(s.strike); var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0); if(Math.abs(net)<0.02)return;
       var op=0.05+0.30*(Math.abs(net)/mg), half=Math.max(0.35,Math.abs(net)/mg*1.6);
       shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:s.strike-half,y1:s.strike+half,fillcolor:(net>0?'rgba(0,208,132,':'rgba(255,51,85,')+op+')',line:{width:0},layer:'below'});});
   }
+  if(spot) yvals.push(spot);
   [{v:d.king_strike,c:C.orange,dash:'solid',w:2,l:'KING ♛'},{v:d.gamma_flip,c:C.yellow,dash:'solid',w:1.5,l:'γ FLIP'},{v:d.call_wall,c:C.green,dash:'dot',w:1,l:'CALL WALL'},{v:d.put_wall,c:C.red,dash:'dot',w:1,l:'PUT WALL'},{v:d.max_pain,c:C.blue,dash:'dash',w:1,l:'MAX PAIN'}].forEach(function(ln){
-    if(!ln.v)return; shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:ln.v,y1:ln.v,line:{color:ln.c,width:ln.w,dash:ln.dash}});
+    if(!ln.v)return; yvals.push(ln.v); shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:ln.v,y1:ln.v,line:{color:ln.c,width:ln.w,dash:ln.dash}});
     annos.push({xref:'paper',yref:'y',x:0.006,y:ln.v,text:ln.l,showarrow:false,yanchor:'bottom',font:{size:8,color:ln.c,family:'monospace'}});});
+
   var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:48,r:10,t:6,b:32},
-    xaxis:{type:'date',gridcolor:C.border,tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted},
-    yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},yaxis2:{overlaying:'y',side:'right',showgrid:false,showticklabels:false,range:[0,mv*8]},
-    shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
-  plot([cT,vT],layout,'cloud');
+    yaxis:{gridcolor:C.border,color:C.muted,tickformat:'$.0f'},shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
+  var traces;
+
+  if(candles.length){
+    // Full intraday candlesticks + volume.
+    var times=candles.map(function(c){return c.t;});
+    var cT={type:'candlestick',x:times,open:candles.map(function(c){return c.o;}),high:candles.map(function(c){return c.h;}),low:candles.map(function(c){return c.l;}),close:candles.map(function(c){return c.c;}),
+      increasing:{line:{color:C.green,width:1},fillcolor:C.green},decreasing:{line:{color:C.red,width:1},fillcolor:C.red},name:'SPY',hovertemplate:'<b>%{x|%H:%M}</b> O:%{open:.2f} H:%{high:.2f} L:%{low:.2f} C:%{close:.2f}<extra></extra>'};
+    var vols=candles.map(function(c){return c.v||0;}), mv=Math.max.apply(null,vols)||1;
+    var vT={type:'bar',x:times,y:vols,yaxis:'y2',marker:{color:candles.map(function(c){return c.c>=c.o?'rgba(0,208,132,.16)':'rgba(255,51,85,.16)';})},hoverinfo:'skip',showlegend:false};
+    layout.xaxis={type:'date',gridcolor:C.border,tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted};
+    layout.yaxis2={overlaying:'y',side:'right',showgrid:false,showticklabels:false,range:[0,mv*8]};
+    traces=[cT,vT];
+  } else if(hist.length>=2){
+    // No candles (RH offline) → draw the intraday spot PATH over the gamma bands.
+    var hx=hist.map(function(p){return p.t;});
+    traces=[{type:'scatter',mode:'lines',x:hx,y:hist.map(function(p){return p.spot;}),line:{color:'#fff',width:2},name:'Spot',hovertemplate:'%{x} spot %{y:.2f}<extra></extra>'}];
+    layout.xaxis={type:'category',gridcolor:C.border,color:C.muted,nticks:8};
+  } else {
+    // Only a snapshot → show the GEX map with a horizontal spot line, y-ranged to the ladder.
+    if(spot) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
+    traces=[{type:'scatter',mode:'markers',x:[0.5],y:[spot||bandRef],marker:{color:'#fff',size:6},hoverinfo:'skip',showlegend:false}];
+    layout.xaxis={visible:false,range:[0,1]};
+    if(yvals.length){ var mn=Math.min.apply(null,yvals)-1, mx=Math.max.apply(null,yvals)+1; layout.yaxis.range=[mn,mx]; }
+    layout.annotations.push({xref:'paper',yref:'paper',x:0.5,y:0.5,text:'snapshot — intraday path builds as scans run',showarrow:false,font:{size:9,color:C.muted,family:'monospace'}});
+  }
+  plot(traces,layout,'cloud');
 }
 
 function renderMigration(d){
