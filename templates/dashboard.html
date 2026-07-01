@@ -189,6 +189,12 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .act-date { font-size:9px; color:var(--muted); min-width:42px; } .act-desc { flex:1; font-size:10px; }
 .act-pnl { font-size:10px; font-weight:700; } .act-pnl.pos{color:var(--green);} .act-pnl.neg{color:var(--red);}
 .act-empty { font-size:10px; color:var(--muted); padding:6px; }
+#share-text { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--font); font-size:11px; line-height:1.45; padding:8px; resize:vertical; }
+.share-btns { display:flex; gap:6px; margin-top:6px; }
+.sbtn { flex:1; padding:7px; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-family:var(--font); font-size:11px; font-weight:700; cursor:pointer; }
+.sbtn:hover { border-color:var(--muted); }
+.sbtn.x { background:#000; border-color:#333; color:#fff; }
+.sbtn.copied { background:rgba(0,208,132,.16); border-color:var(--green); color:var(--green); }
 </style>
 </head>
 <body>
@@ -308,6 +314,14 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
     <div class="r-sec">
       <div class="r-hdr"><span>Trade Journal</span></div>
       <div class="act-feed" id="act-feed"><div class="act-empty">No trades yet</div></div>
+    </div>
+    <div class="r-sec">
+      <div class="r-hdr"><span>📣 Share Signal to X</span></div>
+      <textarea id="share-text" rows="6" spellcheck="false"></textarea>
+      <div class="share-btns">
+        <button class="sbtn" id="copy-btn">📋 Copy</button>
+        <button class="sbtn x" id="x-btn">𝕏 Post on X</button>
+      </div>
     </div>
   </div>
 </div>
@@ -868,8 +882,43 @@ function poll(){
     renderLadder(d); renderGexLevels(d);
     renderPositions(d); renderFlow(d); renderStats(d); renderJournal(d);
     renderMainChart(d);
+    var sbox=document.getElementById('share-text');
+    if(sbox && !sbox.dataset.edited) sbox.value=composeSignal(d);
   }).catch(function(e){ console.error('poll error',e); });
 }
+
+// Compose a ready-to-post X signal from live state.
+function composeSignal(d){
+  var dir=(d.direction||'').toLowerCase();
+  var side = (dir[0]==='c'||dir==='long'||dir==='bullish') ? '📈 LONG CALL (bet up)'
+           : (dir[0]==='p'||dir==='short'||dir==='bearish') ? '📉 LONG PUT (bet down)'
+           : '⏸ FLAT — no trade';
+  var conf = d.conf_pct!=null?d.conf_pct:(d.confidence!=null?Math.round(d.confidence*(d.confidence<=1?100:1)):null);
+  var L=['$SPY 0DTE — HEATSEEKER', side+(conf!=null?(' · conf '+conf+'%'):'')];
+  var a=[]; if(d.spot)a.push('spot $'+d.spot.toFixed(2)); if(d.gamma_flip)a.push('γflip $'+d.gamma_flip); if(d.king_strike)a.push('king $'+d.king_strike);
+  if(a.length)L.push(a.join(' · '));
+  var w=[]; if(d.call_wall)w.push('call wall $'+d.call_wall); if(d.put_wall)w.push('put wall $'+d.put_wall);
+  if(w.length)L.push(w.join(' · '));
+  if(d.spx_confirm)L.push('SPX real money: '+(d.spx_confirm==='ALIGNED'?'confirms ✓':'diverges ✗'));
+  if(d.net_gex_total!=null)L.push('Regime: '+(d.net_gex_total>=0?'positive γ (pinning)':'negative γ (trending)'));
+  L.push('#0DTE #SPY #GEX #optionsflow');
+  return L.join('\n');
+}
+(function(){
+  var copyBtn=document.getElementById('copy-btn'), xBtn=document.getElementById('x-btn'), box=document.getElementById('share-text');
+  if(copyBtn) copyBtn.addEventListener('click', function(){
+    box.select();
+    navigator.clipboard.writeText(box.value).then(function(){
+      copyBtn.textContent='✅ Copied'; copyBtn.classList.add('copied');
+      setTimeout(function(){ copyBtn.textContent='📋 Copy'; copyBtn.classList.remove('copied'); }, 1600);
+    }).catch(function(){ document.execCommand('copy'); });
+  });
+  if(xBtn) xBtn.addEventListener('click', function(){
+    window.open('https://x.com/intent/tweet?text='+encodeURIComponent(box.value), '_blank');
+  });
+  if(box) box.addEventListener('input', function(){ box.dataset.edited='1'; });
+})();
+
 poll(); setInterval(poll,20000);
 </script>
 </body>
