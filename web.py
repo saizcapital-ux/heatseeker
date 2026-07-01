@@ -489,11 +489,16 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
-                # Intraday SPY candles (5-min bars, today only)
+                # Intraday SPY candles (5-min bars). bounds="trading" includes
+                # pre-market + after-hours so the chart is populated before 9:30.
                 try:
                     bars = rh.stocks.get_stock_historicals(
-                        "SPY", interval="5minute", span="day"
+                        "SPY", interval="5minute", span="day", bounds="trading"
                     ) or []
+                    if not bars:  # fall back to regular hours if extended is empty
+                        bars = rh.stocks.get_stock_historicals(
+                            "SPY", interval="5minute", span="day"
+                        ) or []
                     candles = []
                     for bar in bars:
                         t = bar.get("begins_at", "")
@@ -502,11 +507,13 @@ def _ticker():
                         l = float(bar.get("low_price") or 0)
                         c = float(bar.get("close_price") or 0)
                         v = int(float(bar.get("volume") or 0))
+                        sess = bar.get("session", "reg")   # 'pre' | 'reg' | 'post'
                         if o and h and l and c:
-                            candles.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
+                            candles.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v, "s": sess})
                     if candles:
                         patch["candles"] = candles
-                        log.info(f"candles: {len(candles)} bars")
+                        pre = sum(1 for x in candles if x["s"] != "reg")
+                        log.info(f"candles: {len(candles)} bars ({pre} pre/post)")
                 except Exception as ce:
                     log.warning(f"candle fetch error: {ce}")
 

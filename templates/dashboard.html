@@ -636,6 +636,19 @@ function renderCloud(d){
     layout.xaxis={type:'date',gridcolor:'rgba(28,32,48,.55)',tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted};
     layout.yaxis.range=[yLo,yHi];
     layout.yaxis2={overlaying:'y',side:'right',showgrid:false,showticklabels:false,range:[0,mv*8]};
+    // Premarket / after-hours: shade the extended-hours span and mark the 9:30 open.
+    var firstReg=-1, lastReg=-1;
+    for(var ci=0;ci<candles.length;ci++){ if((candles[ci].s||'reg')==='reg'){ if(firstReg<0)firstReg=ci; lastReg=ci; } }
+    if(firstReg>0){
+      shapes.push({type:'rect',xref:'x',yref:'paper',x0:times[0],x1:times[firstReg],y0:0,y1:1,fillcolor:'rgba(120,131,160,.07)',line:{width:0},layer:'below'});
+      shapes.push({type:'line',xref:'x',yref:'paper',x0:times[firstReg],x1:times[firstReg],y0:0,y1:1,line:{color:C.muted,width:1,dash:'dot'}});
+      annos.push({xref:'x',yref:'paper',x:times[firstReg],y:1,yanchor:'bottom',xanchor:'left',text:' 9:30 open',showarrow:false,font:{size:8,color:C.muted,family:'monospace'}});
+      annos.push({xref:'x',yref:'paper',x:times[0],y:0.02,yanchor:'bottom',xanchor:'left',text:' premarket',showarrow:false,font:{size:8,color:C.muted,family:'monospace'}});
+    }
+    if(lastReg>=0 && lastReg<candles.length-1){
+      shapes.push({type:'rect',xref:'x',yref:'paper',x0:times[lastReg],x1:times[candles.length-1],y0:0,y1:1,fillcolor:'rgba(120,131,160,.07)',line:{width:0},layer:'below'});
+      annos.push({xref:'x',yref:'paper',x:times[candles.length-1],y:0.02,yanchor:'bottom',xanchor:'right',text:'after hours ',showarrow:false,font:{size:8,color:C.muted,family:'monospace'}});
+    }
     drawLevels(yLo,yHi);
     traces=[cT,vT];
   } else if(hist.length>=2){
