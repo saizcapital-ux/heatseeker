@@ -23,6 +23,14 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
 .pro-link { font-size:11px; color:var(--muted); text-decoration:none; border:1px solid var(--border); padding:5px 10px; border-radius:20px; font-weight:600; }
 .pro-link:hover { color:var(--text); border-color:var(--muted); }
+.share { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:16px; }
+.share-hdr { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+.share-box { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:var(--font); font-size:13px; line-height:1.5; padding:10px 12px; resize:vertical; }
+.share-btns { display:flex; gap:10px; margin-top:10px; }
+.sbtn { flex:1; padding:11px; border-radius:10px; border:1px solid var(--border); background:var(--card2); color:var(--text); font-family:var(--font); font-size:13px; font-weight:700; cursor:pointer; }
+.sbtn:hover { border-color:var(--muted); }
+.sbtn.x { background:#000; border-color:#333; color:#fff; text-align:center; }
+.sbtn.copied { background:rgba(0,208,132,.16); border-color:var(--green); color:var(--green); }
 .sess-badge { font-size:10px; font-weight:700; letter-spacing:.5px; padding:4px 9px; border-radius:20px; border:1px solid var(--border); }
 .sess-badge.rth{background:rgba(0,208,132,.14);color:var(--green);border-color:rgba(0,208,132,.3);}
 .sess-badge.pre{background:rgba(245,200,66,.14);color:var(--yellow);border-color:rgba(245,200,66,.3);}
@@ -142,6 +150,16 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
     <div class="botline-txt" id="bot-txt">Starting up…</div>
   </div>
 
+  <!-- Share signal to X -->
+  <div class="share">
+    <div class="share-hdr">📣 Share this signal</div>
+    <textarea id="share-text" class="share-box" rows="6" spellcheck="false"></textarea>
+    <div class="share-btns">
+      <button class="sbtn" id="copy-btn">📋 Copy</button>
+      <button class="sbtn x" id="x-btn">𝕏  Post on X</button>
+    </div>
+  </div>
+
   <!-- Recent trades -->
   <div class="sec-title">Recent Trades</div>
   <div class="feed" id="feed"><div class="feed-empty">No trades yet.</div></div>
@@ -155,6 +173,37 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
 
 <script>
 function money(n){ return (n<0?'-$':'$')+Math.abs(n).toFixed(2); }
+
+// Compose a ready-to-post X signal from the live state.
+function composeSignal(d){
+  var dir=(d.direction||'').toLowerCase();
+  var side = (dir[0]==='c'||dir==='long'||dir==='bullish') ? '📈 LONG CALL (bet up)'
+           : (dir[0]==='p'||dir==='short'||dir==='bearish') ? '📉 LONG PUT (bet down)'
+           : '⏸ FLAT — no trade';
+  var conf = d.conf_pct!=null?d.conf_pct:(d.confidence!=null?Math.round(d.confidence*(d.confidence<=1?100:1)):null);
+  var L=['$SPY 0DTE — HEATSEEKER', side+(conf!=null?(' · conf '+conf+'%'):'')];
+  var a=[]; if(d.spot)a.push('spot $'+d.spot.toFixed(2)); if(d.gamma_flip)a.push('γflip $'+d.gamma_flip); if(d.king_strike)a.push('king $'+d.king_strike);
+  if(a.length)L.push(a.join(' · '));
+  var w=[]; if(d.call_wall)w.push('call wall $'+d.call_wall); if(d.put_wall)w.push('put wall $'+d.put_wall);
+  if(w.length)L.push(w.join(' · '));
+  if(d.net_gex_total!=null)L.push('Regime: '+(d.net_gex_total>=0?'positive γ (pinning)':'negative γ (trending)'));
+  L.push('#0DTE #SPY #GEX #optionsflow');
+  return L.join('\n');
+}
+(function(){
+  var copyBtn=document.getElementById('copy-btn'), xBtn=document.getElementById('x-btn'), box=document.getElementById('share-text');
+  if(copyBtn) copyBtn.addEventListener('click', function(){
+    box.select();
+    navigator.clipboard.writeText(box.value).then(function(){
+      copyBtn.textContent='✅ Copied'; copyBtn.classList.add('copied');
+      setTimeout(function(){ copyBtn.textContent='📋 Copy'; copyBtn.classList.remove('copied'); }, 1600);
+    }).catch(function(){ document.execCommand('copy'); });
+  });
+  if(xBtn) xBtn.addEventListener('click', function(){
+    window.open('https://x.com/intent/tweet?text='+encodeURIComponent(box.value), '_blank');
+  });
+  if(box) box.addEventListener('input', function(){ box.dataset.edited='1'; });
+})();
 
 function marketSession(){
   var et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -216,6 +265,10 @@ function setHero(cls,emoji,title,sub,extra){
 }
 
 function render(d){
+  // Share box — keep in sync with the live signal unless the user edited it
+  var sbox=document.getElementById('share-text');
+  if(sbox && !sbox.dataset.edited) sbox.value=composeSignal(d);
+
   // Money
   document.getElementById('m-bal').textContent = d.balance!=null ? money(d.balance) : '$--';
   var pnl=d.total_pnl||0, pe=document.getElementById('m-pnl');
