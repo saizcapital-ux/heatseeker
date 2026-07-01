@@ -186,23 +186,23 @@ def main():
     scheduler.add_job(run_entry, IntervalTrigger(minutes=15), id="entry_scan", name="Entry scan")
 
     # Exit monitor: every 15 minutes — checks trailing stop and hard stop
-    scheduler.add_job(lambda: run_exit(False), IntervalTrigger(minutes=15), id="exit_scan", name="Exit scan")
+    scheduler.add_job(lambda: run_exit(False), IntervalTrigger(minutes=2), id="exit_scan", name="Exit scan")
 
     # Force close: 3:30 PM sharp every weekday
     scheduler.add_job(force_close, CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="force_close", name="3:30 PM force close")
 
     # Live GEX analysis every 15 min during market hours — keeps dashboard populated
-    scheduler.add_job(run_gex_analysis, IntervalTrigger(minutes=15), id="gex_scan", name="Live GEX scan")
+    scheduler.add_job(run_gex_analysis, IntervalTrigger(minutes=3), id="gex_scan", name="Live GEX scan")
 
     # Market data refresh: every 5 minutes (yfinance, no login)
-    scheduler.add_job(refresh_market_data, IntervalTrigger(minutes=5), id="market_refresh", name="Market data refresh")
+    scheduler.add_job(refresh_market_data, IntervalTrigger(minutes=2), id="market_refresh", name="Market data refresh")
 
     log.info("HEATSEEKER Scheduler running:")
-    log.info("  GEX scan    : every 15 min (live king node, direction, confidence → dashboard)")
+    log.info("  GEX scan    : every 3 min (live king node, direction, confidence → dashboard)")
     log.info("  Entry scan  : every 15 min (self-gates: 9:45 AM–12:30 PM ET, no open position)")
-    log.info("  Exit scan   : every 15 min (trailing stop, -50% hard stop)")
+    log.info("  Exit scan   : every 2 min (trailing stop, -50% hard stop)")
     log.info("  Force close : 3:30 PM ET Mon-Fri")
-    log.info("  Market data : every 5 min (SPY price + VIX via yfinance)")
+    log.info("  Market data : every 2 min (SPY price + VIX)")
 
     try:
         scheduler.start()

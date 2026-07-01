@@ -64,7 +64,7 @@ def _read_history():
 CBOE_URL     = "https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json"
 CBOE_VIX_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/_VIX.json"
 CBOE_STRIKE_WINDOW = 25          # strikes within ±$ of spot for the ladder
-CBOE_REFRESH_SEC   = 300         # recompute at most every 5 min
+CBOE_REFRESH_SEC   = 120         # recompute at most every 2 min (delayed feed, but fresher snapshots)
 CBOE_RH_FRESH_SEC  = 960         # treat a Robinhood scan as authoritative for 16 min
 _cboe_last = 0
 
@@ -603,7 +603,7 @@ def _ticker():
             _ticker_status["logged_in"] = False   # force a fresh background re-login
             _ticker_status["last_error"] = str(e)
 
-        for _ in range(60):
+        for _ in range(30):     # 30s loop → near-real-time price/candles/positions
             time.sleep(1)
 
 threading.Thread(target=_ticker, daemon=True).start()

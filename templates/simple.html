@@ -357,7 +357,7 @@ function render(d){
 function poll(){
   fetch('/api/state').then(function(r){return r.json();}).then(render).catch(function(e){console.error(e);});
 }
-poll(); setInterval(poll,20000);
+poll(); setInterval(poll,8000);
 </script>
 </body>
 </html>
