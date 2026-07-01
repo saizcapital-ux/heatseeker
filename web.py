@@ -252,15 +252,56 @@ def api_state():
     closed = [t for t in trades if t.get("pnl_pct") is not None]
     total_pnl = sum(t.get("pnl_usd", 0) or 0 for t in closed)
     bal = g.get("balance") or (closed[-1].get("balance_after") if closed else None) or 21.64
+
+    # The scheduler writes the full per-strike GEX ladder as "strike_ladder"
+    # (fields: net_gex_m, call_gex_m, put_gex_m, call_oi, put_oi, call_vol, put_vol).
+    # Normalize it into the shape the dashboard's GEX cloud + GEX levels consume.
+    # (Historically the dashboard read "gex_by_strike", a key nothing ever wrote —
+    #  which is why the GEX cloud was always empty.)
+    ladder = g.get("strike_ladder") or []
+    gex_by_strike = [{
+        "strike":   row.get("strike"),
+        "call_gex": row.get("call_gex_m", 0),
+        "put_gex":  row.get("put_gex_m", 0),
+        "net_gex":  row.get("net_gex_m", 0),
+        "call_oi":  row.get("call_oi", 0),
+        "put_oi":   row.get("put_oi", 0),
+        "call_vol": row.get("call_vol", 0),
+        "put_vol":  row.get("put_vol", 0),
+    } for row in ladder if row.get("strike") is not None]
+
+    # Determine what the bot is doing right now — mirrors scheduler.py windows (ET).
+    now = datetime.now(ET)
+    t_min = now.hour * 60 + now.minute
+    is_weekday = now.weekday() < 5
+    if not is_weekday:
+        bot_phase, bot_phase_label = "closed", "Weekend — market closed"
+    elif t_min < 570:
+        bot_phase, bot_phase_label = "premarket", "Pre-market — waiting for 9:30 open"
+    elif t_min > 960:
+        bot_phase, bot_phase_label = "closed", "After hours — flat until tomorrow"
+    elif 925 <= t_min <= 935:
+        bot_phase, bot_phase_label = "force_close", "Force-close window — flattening (3:30 PM)"
+    elif 585 <= t_min <= 750:
+        bot_phase, bot_phase_label = "entry", "Entry window — scanning for signal (9:45–12:30)"
+    elif 600 <= t_min <= 930:
+        bot_phase, bot_phase_label = "manage", "Managing positions — trailing stops (until 3:30)"
+    else:
+        bot_phase, bot_phase_label = "monitor", "Monitoring — GEX scan only, no new entries"
+
     return jsonify({
         "spot":           g.get("spot"),
+        "prev_close":     g.get("prev_close"),
         "vix":            g.get("vix"),
         "vix3m":          g.get("vix3m"),
         "ts_label":       g.get("ts_label"),
         "ts_slope":       g.get("ts_slope"),
         "vanna_label":    g.get("vanna_label"),
+        "ivr":            g.get("ivr"),
+        "vrp_label":      g.get("vrp_label"),
         "direction":      g.get("direction"),
         "confidence":     g.get("confidence"),
+        "regime_ok":      g.get("regime_ok"),
         "last_action":    g.get("last_action", "Bot starting up..."),
         "market_updated": g.get("market_updated"),
         "balance":        round(float(bal), 2),
@@ -268,13 +309,22 @@ def api_state():
         "total_pnl":      round(total_pnl, 2),
         "trades":         trades[-20:],
         "open_positions": g.get("open_positions", []),
-        "gex_by_strike":  g.get("gex_by_strike", []),
+        "gex_by_strike":  gex_by_strike,
+        "king_strike":    g.get("king_strike"),
+        "king_gex_m":     g.get("king_gex_m"),
         "gamma_flip":     g.get("gamma_flip"),
         "max_pain":       g.get("max_pain"),
         "call_wall":      g.get("call_wall"),
         "put_wall":       g.get("put_wall"),
+        "flow_feed":      g.get("flow_feed", []),
+        "flow_ratio":     g.get("flow_ratio"),
+        "call_vol_total": g.get("call_vol_total"),
+        "put_vol_total":  g.get("put_vol_total"),
+        "top_nodes":      g.get("top_nodes"),
         "candles":        g.get("candles", []),
-        "ts":             datetime.now(ET).strftime("%H:%M:%S ET"),
+        "bot_phase":      bot_phase,
+        "bot_phase_label": bot_phase_label,
+        "ts":             now.strftime("%H:%M:%S ET"),
         "rh_logged_in":   _ticker_status["logged_in"],
         "rh_error":       _ticker_status["last_error"],
         "rh_last_ok":     _ticker_status["last_ok"],

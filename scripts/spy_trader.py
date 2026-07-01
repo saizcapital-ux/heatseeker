@@ -977,6 +977,20 @@ def analyze_gex_only():
         total_vol      = call_vol_total + put_vol_total
         flow_ratio     = round(call_vol_total / total_vol, 3) if total_vol else 0.5
 
+        # Max pain: strike that minimizes total intrinsic payout to option holders
+        # (= maximizes dealer/writer benefit). Standard cash-settled formulation.
+        max_pain = None
+        if all_strikes:
+            best_pain = None
+            for k in all_strikes:
+                call_pay = sum(call_by_strike.get(s, {}).get("open_interest", 0) * max(0.0, k - s)
+                               for s in all_strikes)
+                put_pay  = sum(put_by_strike.get(s, {}).get("open_interest", 0) * max(0.0, s - k)
+                               for s in all_strikes)
+                total_pain = call_pay + put_pay
+                if best_pain is None or total_pain < best_pain:
+                    best_pain, max_pain = total_pain, k
+
         write_gex_state({
             "spot":        spot,
             "prev_close":  prev_close,
@@ -994,6 +1008,7 @@ def analyze_gex_only():
             "direction":   direction,
             "confidence":  round(confidence, 3),
             "gamma_flip":  gamma_flip,
+            "max_pain":    max_pain,
             "call_wall":   gex_features.get("call_wall"),
             "put_wall":    gex_features.get("put_wall"),
             "gex_features": gex_features,
