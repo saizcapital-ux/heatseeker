@@ -9,7 +9,13 @@ log = logging.getLogger("heatseeker.exit")
 
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
 FORCE_CLOSE    = os.getenv("FORCE_CLOSE", "false").lower() == "true"
-ACCOUNT_NUMBER = "634079917"
+AGENTIC_ACCOUNT = "634079917"   # the ONLY account this bot may ever trade
+ACCOUNT_NUMBER = AGENTIC_ACCOUNT
+
+def _assert_agentic(acct):
+    if str(acct) != AGENTIC_ACCOUNT:
+        raise SystemExit(f"REFUSED: order targeted account {acct!r}, not the agentic account {AGENTIC_ACCOUNT}")
+    return acct
 STOP_LOSS      = -0.50
 TRAIL_ACTIVATE = 1.00   # trailing stop kicks in at +100% (or +30% if regime bullish)
 TRAIL_DROP     = 0.25   # sell if price falls 25% from peak
@@ -144,6 +150,8 @@ def close_position(position, limit_price):
     log.info(f"{'[DRY RUN] ' if DRY_RUN else ''}CLOSE: SELL {qty}x {symbol} {strike}{otype[0].upper()} exp={exp} limit=${limit_price:.2f}")
     if DRY_RUN:
         return {"dry_run": True}
+    _assert_agentic(ACCOUNT_NUMBER)
+    log.info(f"LIVE CLOSE on agentic account {ACCOUNT_NUMBER}")
     order = rh.orders.order_sell_option_limit(
         positionEffect="close", creditOrDebit="credit", price=limit_price,
         symbol=symbol, quantity=qty, expirationDate=exp,

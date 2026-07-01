@@ -11,7 +11,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(me
 log = logging.getLogger("heatseeker")
 
 DRY_RUN        = os.getenv("DRY_RUN", "false").lower() == "true"
-ACCOUNT_NUMBER = "634079917"
+AGENTIC_ACCOUNT = "634079917"   # the ONLY account this bot may ever trade
+ACCOUNT_NUMBER = AGENTIC_ACCOUNT
+
+def _assert_agentic(acct):
+    """Hard guard: refuse to place any order on a non-agentic account."""
+    if str(acct) != AGENTIC_ACCOUNT:
+        raise SystemExit(f"REFUSED: order targeted account {acct!r}, not the agentic account {AGENTIC_ACCOUNT}")
+    return acct
 STRIKE_WINDOW  = 20       # expanded: low balance needs further-OTM cheap contracts
 VIX_MIN        = 14.0
 VIX_MAX        = 28.0
@@ -584,6 +591,8 @@ def place_order(contract, expiration, opt_type, qty):
     if DRY_RUN:
         log.info("DRY_RUN=true - not submitted")
         return {"dry_run": True}
+    _assert_agentic(ACCOUNT_NUMBER)
+    log.info(f"LIVE ORDER on agentic account {ACCOUNT_NUMBER}")
     order = rh.orders.order_buy_option_limit(
         positionEffect="open", creditOrDebit="debit", price=limit,
         symbol=symbol, quantity=qty, expirationDate=expiration,
