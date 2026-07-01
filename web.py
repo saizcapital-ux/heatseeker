@@ -773,6 +773,14 @@ def _health_checks():
                    "detail": ("REAL MONEY — agentic account only" if not dry
                               else "DRY-RUN (paper) — set DRY_RUN=false for live")})
 
+    tw_on   = os.getenv("TWITTER_ENABLED", "false").lower() == "true"
+    tw_keys = all(os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_SECRET",
+                                         "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_SECRET"))
+    checks.append({"name": "Twitter / X posting", "ok": True,
+                   "detail": ("ON — entries & exits will post to your account" if (tw_on and tw_keys)
+                              else "TWITTER_ENABLED=true but API keys incomplete" if tw_on
+                              else "off (optional) — set TWITTER_ENABLED=true + 4 API keys to post")})
+
     checks.append({"name": "Last GEX scan", "ok": bool(g.get("market_updated")),
                    "detail": g.get("market_updated") or "waiting for first scan"})
 

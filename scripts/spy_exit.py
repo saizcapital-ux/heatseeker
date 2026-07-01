@@ -246,6 +246,12 @@ def main():
                     log_exit(trade_id, mark, reason, balance_after)
                 except Exception as je:
                     log.warning(f"Journal exit log failed (non-fatal): {je}")
+                try:
+                    from scripts.social import tweet_exit
+                    tweet_exit(direction=p["opt_type"], strike=p["strike"],
+                               pnl_pct=pnl_pct * 100, pnl_usd=pnl_usd, reason=reason)
+                except Exception as te:
+                    log.warning(f"Exit tweet failed (non-fatal): {te}")
         elif not reason and not state.get(key, {}).get("activated") and pnl_pct < activate_threshold:
             log.info("ACTION: HOLD")
             print(f"  --> HOLD")

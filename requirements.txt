@@ -4,3 +4,4 @@ pytz
 flask>=3.0.0
 yfinance>=0.2.0
 pyotp
+tweepy>=4.14.0

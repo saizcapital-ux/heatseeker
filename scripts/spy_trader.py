@@ -886,6 +886,13 @@ def main():
             direction=direction, balance_before=balance,
             gex_features=gex_features, confidence=confidence,
         )
+        try:
+            from scripts.social import tweet_entry
+            tweet_entry(direction=direction, strike=float(contract["strike_price"]),
+                        price=ask, king_strike=king_strike, gamma_flip=gamma_flip,
+                        confidence=confidence, spot=spot)
+        except Exception as te:
+            log.warning(f"Entry tweet failed (non-fatal): {te}")
 
     print("\n" + "="*60)
     print(f"HEATSEEKER MORNING SIGNAL - {expiration}")
