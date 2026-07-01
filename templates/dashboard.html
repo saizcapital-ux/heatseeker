@@ -77,7 +77,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .sb-conf-fill { height:100%; background:var(--green); border-radius:2px; transition:width .4s; }
 
 /* BODY */
-#body { flex:1; display:grid; grid-template-columns:1fr 66px 300px; min-height:0; }
+#body { flex:1; display:grid; grid-template-columns:1fr 316px; min-height:0; }
 #col-chart { display:flex; flex-direction:column; border-right:1px solid var(--border); min-height:0; }
 
 .tabs { height:30px; min-height:30px; display:flex; align-items:stretch; border-bottom:1px solid var(--border); flex-shrink:0; }
@@ -245,12 +245,9 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="sb-item"><span class="sb-k">Regime</span><span class="sb-v" id="sb-regime">--</span></div>
   <div class="sb-item"><span class="sb-k">Term</span><span class="sb-v" id="sb-ts">--</span></div>
   <div class="sb-item"><span class="sb-k">Vanna</span><span class="sb-v" id="sb-vanna">--</span></div>
-  <div class="sb-item"><span class="sb-k">Call Wall</span><span class="sb-v" id="sb-cw" style="color:var(--green)">--</span></div>
-  <div class="sb-item"><span class="sb-k">Put Wall</span><span class="sb-v" id="sb-pw" style="color:var(--red)">--</span></div>
-  <div class="sb-item"><span class="sb-k">Max Pain</span><span class="sb-v" id="sb-pain" style="color:var(--blue)">--</span></div>
-  <div class="sb-div"></div>
   <div class="sb-item"><span class="sb-k">IVR</span><span class="sb-v" id="sb-ivr">--</span></div>
   <div class="sb-item"><span class="sb-k">VRP</span><span class="sb-v" id="sb-vrp">--</span></div>
+  <span style="margin-left:auto;font-size:9px;color:var(--muted)">walls &amp; levels → on chart</span>
 </div>
 
 <div id="body">
@@ -265,17 +262,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
       <div id="main-chart"></div>
       <div id="cross-line"></div>
       <div id="cross-price"></div>
-      <div id="chart-ph">Charts render during market hours<br><span style="font-size:9px">GEX levels below update on every 15-min scan</span></div>
+      <div id="chart-ph">Charts render during market hours<br><span style="font-size:9px">levels &amp; GEX appear on the chart itself</span></div>
     </div>
-    <div id="gex-levels-wrap">
-      <div class="col-hdr">⚡ GEX Levels — net dealer gamma by strike ($M)</div>
-      <div id="gex-levels"><div class="glv-empty">GEX ladder loads on the next 15-min scan.</div></div>
-    </div>
-  </div>
-
-  <div id="col-levels">
-    <div class="lvl-hdr">KEY<br>LEVELS</div>
-    <div id="ladder"><div class="ladder-line"></div></div>
   </div>
 
   <div id="col-right">
@@ -423,9 +411,6 @@ function renderSignal(d){
   document.getElementById('sb-regime').textContent=reg;
   var ts=d.ts_label||'', tse=document.getElementById('sb-ts'); tse.textContent=ts.replace(/_/g,' ')||'--'; tse.className='sb-v '+(ts||'');
   document.getElementById('sb-vanna').textContent=d.vanna_label?d.vanna_label.replace(/_/g,' '):'--';
-  document.getElementById('sb-cw').textContent=d.call_wall?'$'+d.call_wall:'--';
-  document.getElementById('sb-pw').textContent=d.put_wall?'$'+d.put_wall:'--';
-  document.getElementById('sb-pain').textContent=d.max_pain?'$'+d.max_pain:'--';
   var ivrEl=document.getElementById('sb-ivr');
   if(d.ivr!=null){ var ivrPct=Math.round(d.ivr*(d.ivr<=1?100:1)); ivrEl.textContent=ivrPct+'%'; ivrEl.style.color=ivrPct>=50?C.red:ivrPct<=30?C.green:C.text; }
   else ivrEl.textContent='--';
@@ -480,43 +465,6 @@ function computeEvents(hist, d){
   if(!evs.length){ el.innerHTML='<div class="ev-empty">No regime events yet today — flip is stable.</div>'; return; }
   el.innerHTML = evs.slice(-7).reverse().map(function(e){
     return '<div class="ev-row"><span class="ev-t">'+(e.t||'').slice(0,5)+'</span><span class="ev-txt '+e.cls+'">'+e.txt+'</span></div>';
-  }).join('');
-}
-
-function renderLadder(d){
-  var ladder=document.getElementById('ladder');
-  ladder.querySelectorAll('.ladder-item').forEach(function(el){el.remove();});
-  var L=[];
-  if(d.call_wall)L.push({n:'CALL WALL',p:d.call_wall,i:'▲',c:C.green});
-  if(d.king_strike)L.push({n:'KING',p:d.king_strike,i:'♛',c:C.orange});
-  if(d.gamma_flip)L.push({n:'γ FLIP',p:d.gamma_flip,i:'⚡',c:C.yellow});
-  if(d.spot)L.push({n:'SPY',p:d.spot,i:'●',c:'#fff',bold:1});
-  if(d.max_pain)L.push({n:'MAX PAIN',p:d.max_pain,i:'⊗',c:C.blue});
-  if(d.put_wall)L.push({n:'PUT WALL',p:d.put_wall,i:'▼',c:C.red});
-  if(L.length<2)return;
-  var ps=L.map(function(x){return x.p;}), mn=Math.min.apply(null,ps)-1, mx=Math.max.apply(null,ps)+1, rg=mx-mn||1;
-  L.sort(function(a,b){return b.p-a.p;}); var last=-100;
-  L.forEach(function(l){
-    var pct=(1-(l.p-mn)/rg)*100, cl=Math.max(5,Math.min(95,pct)); if(cl-last<11)cl=last+11; last=cl;
-    var el=document.createElement('div'); el.className='ladder-item'; el.style.top=cl+'%';
-    el.innerHTML='<span class="ladder-icon" style="color:'+l.c+'">'+l.i+'</span><span class="ladder-price" style="color:'+l.c+(l.bold?';font-size:9px':'')+'">'+l.p+'</span><span class="ladder-name">'+l.n+'</span>';
-    ladder.appendChild(el);
-  });
-}
-
-function renderGexLevels(d){
-  var el=document.getElementById('gex-levels'), gex=d.gex_by_strike||[], spot=d.spot;
-  if(!gex.length){el.innerHTML='<div class="glv-empty">GEX ladder loads on the next 15-min scan.</div>';return;}
-  var rows=spot?gex.filter(function(s){return Math.abs(s.strike-spot)<=16;}):gex;
-  rows.sort(function(a,b){return b.strike-a.strike;});
-  var maxMag=0; rows.forEach(function(s){var m=Math.max(Math.abs(s.call_gex||0),Math.abs(s.put_gex||0));if(m>maxMag)maxMag=m;}); if(!maxMag)maxMag=1;
-  el.innerHTML=rows.map(function(s){
-    var cW=Math.min(50,Math.abs(s.call_gex||0)/maxMag*50), pW=Math.min(50,Math.abs(s.put_gex||0)/maxMag*50);
-    var net=s.net_gex!=null?s.net_gex:(s.call_gex||0)+(s.put_gex||0);
-    var king=d.king_strike&&Math.abs(s.strike-d.king_strike)<0.5, sp=spot&&Math.abs(s.strike-spot)<0.6;
-    return '<div class="glv-row"><span class="glv-strike '+(king?'king':sp?'spot':'')+'">'+s.strike+(king?' ♛':'')+'</span>'
-      +'<div class="glv-track"><div class="glv-mid"></div><div class="glv-fill put" style="width:'+pW+'%"></div><div class="glv-fill call" style="width:'+cW+'%"></div></div>'
-      +'<span class="glv-net" style="color:'+(net>=0?C.green:C.red)+'">'+(net>=0?'+':'')+net.toFixed(1)+'</span></div>';
   }).join('');
 }
 
@@ -879,7 +827,6 @@ function poll(){
     var d=res[0]; lastState=d; lastHistory=(res[1]&&res[1].history)||[];
     renderHeader(d); renderBot(d); renderSignal(d); renderBrain(d);
     computeEvents(lastHistory,d);
-    renderLadder(d); renderGexLevels(d);
     renderPositions(d); renderFlow(d); renderStats(d); renderJournal(d);
     renderMainChart(d);
     var sbox=document.getElementById('share-text');
