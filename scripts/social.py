@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Post HEATSEEKER trade signals to X / Twitter.
+Post HEATSEEKER trade signals to X (formerly Twitter).
 
 Opt-in and safe by design:
   * Does nothing unless TWITTER_ENABLED=true AND all four API keys are set.

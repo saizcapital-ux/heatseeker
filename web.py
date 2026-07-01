@@ -776,7 +776,7 @@ def _health_checks():
     tw_on   = os.getenv("TWITTER_ENABLED", "false").lower() == "true"
     tw_keys = all(os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_SECRET",
                                          "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_SECRET"))
-    checks.append({"name": "Twitter / X posting", "ok": True,
+    checks.append({"name": "X posting", "ok": True,
                    "detail": ("ON — entries & exits will post to your account" if (tw_on and tw_keys)
                               else "TWITTER_ENABLED=true but API keys incomplete" if tw_on
                               else "off (optional) — set TWITTER_ENABLED=true + 4 API keys to post")})
