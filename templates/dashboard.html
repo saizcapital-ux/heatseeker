@@ -807,11 +807,20 @@ function renderProfile(d){
   if(d.gamma_flip)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.gamma_flip,y1:d.gamma_flip,line:{color:C.yellow,width:1.5}});
   if(d.king_strike)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.king_strike,y1:d.king_strike,line:{color:C.orange,width:1,dash:'dot'}});
 
-  // Shared right-gutter tags for the key strikes.
-  var yLo=Math.min.apply(null,strikes), yHi=Math.max.apply(null,strikes); var pad=((yHi-yLo)*0.04)||1; yLo-=pad; yHi+=pad;
+  // Shared right-gutter tags for the key strikes (+ open-position trade levels).
+  var _yr=strikes.slice(), TL=d.trade_levels;
+  if(TL) ['entry','stop','trail','target','be'].forEach(function(k){ if(TL[k]) _yr.push(TL[k]); });
+  var yLo=Math.min.apply(null,_yr), yHi=Math.max.apply(null,_yr); var pad=((yHi-yLo)*0.04)||1; yLo-=pad; yHi+=pad;
   var annos=[], items=[];
   if(d.gamma_flip) items.push({y:d.gamma_flip,c:C.yellow,text:'γ FLIP '+Math.round(d.gamma_flip)});
   if(d.king_strike)items.push({y:d.king_strike,c:C.orange,text:'KING '+Math.round(d.king_strike)});
+  if(TL){
+    [{y:TL.entry,c:'#fff',t:'▶ ENTRY',w:1.5},{y:TL.target,c:C.green,t:'★ TARGET',w:1},
+     {y:TL.trail,c:C.yellow,t:'⚑ TRAIL',w:1},{y:TL.stop,c:C.red,t:'✖ STOP',w:1.5},
+     {y:TL.be,c:C.blue,t:'B/E',w:1}].forEach(function(x){ if(!x.y) return;
+      shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:x.y,y1:x.y,line:{color:x.c,width:x.w,dash:'longdash'}});
+      items.push({y:x.y,c:x.c,text:x.t+' '+x.y}); });
+  }
   placeTags(annos,items,yLo,yHi);
   if(spot) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
 
