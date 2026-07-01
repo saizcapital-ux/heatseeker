@@ -17,6 +17,7 @@ VIX_MIN        = 14.0
 VIX_MAX        = 28.0
 DELTA_MIN      = 0.15     # lowered: allow cheap OTM contracts when balance < $100
 DELTA_MAX      = 0.55
+DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
 
 # ── Creator-derived constants ─────────────────────────────────────────────────
 # Whaley: IV beats realized vol ~78-85% of the time — use this as premium gate
@@ -684,15 +685,37 @@ def main():
         direction, target, pool = "put", king_strike - 1, puts
     log.info(f"DIRECTION: {direction.upper()} -> target {target}")
 
+    # GEX pattern analysis + dealer flow (needed by the dip-buy override below)
+    gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+
     # Gate 5 — Regime confirm (price vs prev close)
     if direction == "call" and spot < prev_close - 0.50:
-        log.warning(f"GATE 5 BLOCKED: GEX=CALL but SPY ${spot:.2f} bearish vs prev ${prev_close:.2f}"); sys.exit(0)
-    if direction == "put" and spot > prev_close + 0.50:
+        # Dip-buy override: on a positive-gamma (pinning) day a dip below prev
+        # close is a BUY signal — dealers pin price back up toward VWAP/max-pain —
+        # not a headwind. Only when support holds and vol isn't spiking. Gate 6
+        # (spot must stay above the gamma flip) remains the hard floor beneath this.
+        put_wall = gex_features.get("put_wall", 0)
+        vix_prev = get_vix_prev_close()
+        vix_calm = (vix_prev is None) or (vix <= vix_prev * 1.02)
+        dip_ok = (
+            king_gex >= 0                                      # positive dealer gamma → pinning
+            and put_wall and spot > put_wall                   # holding above put-wall support
+            and spot >= prev_close - prev_close * DIP_BUY_MAX_PCT  # shallow dip, not a breakdown
+            and vix_calm                                       # vol flat/falling, not risk-off
+        )
+        if dip_ok:
+            log.info(f"GATE 5 DIP-BUY OVERRIDE: SPY ${spot:.2f} below prev ${prev_close:.2f} but "
+                     f"positive gamma + above put wall ${put_wall:.0f} + VIX calm "
+                     f"({vix:.1f}<=~{(vix_prev or vix):.1f}) → buy the dip")
+        else:
+            log.warning(f"GATE 5 BLOCKED: GEX=CALL but SPY ${spot:.2f} bearish vs prev ${prev_close:.2f} "
+                        f"(dip-buy override not met: gamma+={king_gex>=0}, "
+                        f"above_putwall={bool(put_wall and spot>put_wall)}, vix_calm={vix_calm})")
+            sys.exit(0)
+    elif direction == "put" and spot > prev_close + 0.50:
         log.warning(f"GATE 5 BLOCKED: GEX=PUT but SPY ${spot:.2f} bullish vs prev ${prev_close:.2f}"); sys.exit(0)
-    log.info(f"GATE 5 PASS: regime confirms {direction.upper()} (spot=${spot:.2f} prev=${prev_close:.2f})")
-
-    # GEX pattern analysis + dealer flow
-    gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+    else:
+        log.info(f"GATE 5 PASS: regime confirms {direction.upper()} (spot=${spot:.2f} prev=${prev_close:.2f})")
 
     # Gate 6 — Gamma flip hard boundary (SpotGamma rule: never trade against the flip)
     gamma_flip = gex_features.get("gamma_flip", king_strike)
