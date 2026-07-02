@@ -524,29 +524,33 @@ def _ticker():
                 if raw:
                     patch["spot"] = round(float(raw), 2)
 
-                # VIX — try multiple endpoints
+                # VIX — yfinance ^VIX is the reliable source (RH index-instruments
+                # 404s for most accounts, spamming the log). Try it first, then
+                # fall back to RH endpoints only if yfinance is unavailable.
                 vix_val = None
-                for vix_url in [
-                    f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/",
-                    "https://api.robinhood.com/marketdata/index-instruments/",
-                ]:
-                    try:
-                        vd = rh.helper.request_get(vix_url) or {}
-                        raw_vix = vd.get("value") or vd.get("last_trade_price")
-                        if raw_vix:
-                            vix_val = round(float(raw_vix), 2)
+                try:
+                    import yfinance as yf
+                    fiv = yf.Ticker("^VIX").fast_info
+                    for attr in ("last_price", "regularMarketPrice", "previousClose"):
+                        v = getattr(fiv, attr, None)
+                        if v:
+                            vix_val = round(float(v), 2)
                             break
-                    except Exception:
-                        pass
+                except Exception as yfe:
+                    log.debug(f"yfinance VIX error: {yfe}")
                 if not vix_val:
-                    try:
-                        # Fallback: VIX from quotes endpoint
-                        vq = rh.stocks.get_quotes(["VIX"], info=None) or [{}]
-                        raw_vix = vq[0].get("last_trade_price") or vq[0].get("adjusted_previous_close")
-                        if raw_vix:
-                            vix_val = round(float(raw_vix), 2)
-                    except Exception:
-                        pass
+                    for vix_url in [
+                        f"https://api.robinhood.com/marketdata/index-instruments/{VIX_UUID}/quotes/",
+                        "https://api.robinhood.com/marketdata/index-instruments/",
+                    ]:
+                        try:
+                            vd = rh.helper.request_get(vix_url) or {}
+                            raw_vix = vd.get("value") or vd.get("last_trade_price")
+                            if raw_vix:
+                                vix_val = round(float(raw_vix), 2)
+                                break
+                        except Exception:
+                            pass
                 if vix_val:
                     patch["vix"] = vix_val
                     patch["vix3m"] = round(vix_val * 1.07, 2)
