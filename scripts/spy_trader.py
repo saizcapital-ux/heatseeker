@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, json, logging
+import os, sys, json, logging, math
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 import robin_stocks.robinhood as rh
@@ -28,9 +28,13 @@ DELTA_FLOOR    = 0.10     # hard floor: never buy below this delta, even on the
                           # low-balance fallback — deeper-OTM 0DTE puts/calls are
                           # near-certain-loss lottery tickets. Skip the trade instead.
 TAKE_PROFIT_PCT   = 1.00  # exit target: +100% (double the premium)
-FEASIBILITY_MAX_SIGMA = 1.25  # skip a trade if hitting the +100% target needs a
+FEASIBILITY_MAX_SIGMA = 1.25  # hard pre-filter: skip if hitting +100% needs a
                           # bigger underlying move than this many expected-σ (from
                           # VIX × time-to-close). >1.25σ intraday is not realistic.
+# Conviction: with a +100% win and a -50% stop, break-even hit-rate is ~33%.
+# Only take a trade when the estimated probability of TOUCHING the target clears
+# this, with margin. Raise it to trade less/pickier, lower it to trade more.
+CONVICTION_MIN    = 0.38
 DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
 # Rip-fade (mirror of dip-buy): fade the CALL WALL with puts in a pinning regime
 RIP_FADE_NEAR      = 0.50  # spot within $ below the call wall counts as "at" it
@@ -613,6 +617,102 @@ def target_feasibility(spot, ask, delta, vix, target_strike=None, direction=None
     return ok, ratio, detail
 
 
+def _norm_cdf(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2)))
+
+
+def assess_trade(spot, ask, delta, vix, direction, prev_close, gex_features,
+                 spx_confirm=None, vanna_label=None, skew_label=None,
+                 flow_label=None, gamma_flip=None, pin=None):
+    """Critical-thinking decision layer. Estimates the probability the +100%
+    target is TOUCHED intraday, then weighs the dealer-flow tailwinds/headwinds
+    that make that move more or less likely, and decides take/skip with a written
+    rationale.
+
+    Base probability: to hit +100% the underlying must move ~ask/delta in favor
+    (`ratio` σ of the expected session move). Using the reflection principle,
+    P(price touches +x at some point) ≈ 2·(1−Φ(ratio)) for a driftless walk — the
+    right model here since the trailing stop arms the instant we tag +100%.
+
+    Then each aligned signal (SPX confirm, vanna, skew, flow, momentum vs prev
+    close, room to the wall) nudges the probability up; each opposing one nudges
+    it down. Returns a decision dict with take/prob/ratio/rationale.
+    """
+    for_, against = [], []
+    ok, ratio, feas_detail = target_feasibility(spot, ask, delta, vix, direction=direction)
+
+    p_touch = min(0.95, 2.0 * (1.0 - _norm_cdf(ratio)))   # base P(touch target)
+    if ratio <= 0.6:
+        for_.append(f"target close: only {ratio:.2f}σ to +100%")
+    elif ratio >= 1.0:
+        against.append(f"target far: {ratio:.2f}σ to +100%")
+
+    adj = 1.0
+    call = (direction == "call")
+
+    # 1) Momentum vs prev close — trading with the day's drift toward the target
+    if call and spot > prev_close:
+        adj *= 1.10; for_.append(f"SPY green vs prev ${prev_close:.0f} (drift up)")
+    elif (not call) and spot < prev_close:
+        adj *= 1.10; for_.append(f"SPY red vs prev ${prev_close:.0f} (drift down)")
+    elif call and spot < prev_close - 0.5:
+        adj *= 0.90; against.append("fighting a down day")
+    elif (not call) and spot > prev_close + 0.5:
+        adj *= 0.90; against.append("fighting an up day")
+
+    # 2) SPX real-money confirmation
+    if spx_confirm == "ALIGNED":
+        adj *= 1.12; for_.append("SPX real-money confirms")
+    elif spx_confirm == "DIVERGENT":
+        adj *= 0.82; against.append("SPX diverges")
+
+    # 3) Vanna (VIX-driven mechanical bid/offer) — helps calls when bid, puts when offer
+    if vanna_label:
+        if call and "bid" in vanna_label:
+            adj *= 1.08; for_.append("vanna bid (VIX↓ tailwind)")
+        elif (not call) and "offer" in vanna_label:
+            adj *= 1.08; for_.append("vanna offer (VIX↑ tailwind)")
+        elif call and "offer" in vanna_label:
+            adj *= 0.92; against.append("vanna offer (headwind)")
+        elif (not call) and "bid" in vanna_label:
+            adj *= 0.92; against.append("vanna bid (headwind)")
+
+    # 4) Flow ($ direction) confirmation
+    if flow_label:
+        fl = flow_label.lower()
+        if call and "call" in fl:
+            adj *= 1.06; for_.append("call $-flow leads")
+        elif (not call) and "put" in fl:
+            adj *= 1.06; for_.append("put $-flow leads")
+
+    # 5) Room to the wall — is there space for the move before the pin/wall caps it?
+    cw = gex_features.get("call_wall") if gex_features else None
+    pw = gex_features.get("put_wall") if gex_features else None
+    req_move = ask / abs(delta) if delta else 0
+    if call and cw and (cw - spot) < req_move * 0.75:
+        adj *= 0.85; against.append(f"call wall ${cw:.0f} caps the move")
+    if (not call) and pw and (spot - pw) < req_move * 0.75:
+        adj *= 0.85; against.append(f"put wall ${pw:.0f} caps the move")
+
+    # 6) Regime sanity: is spot on the right side of the flip for this direction?
+    if gamma_flip is not None:
+        if call and spot < gamma_flip:
+            adj *= 0.80; against.append(f"below flip ${gamma_flip:.0f} (calls fight negative γ)")
+        if (not call) and spot < gamma_flip:
+            adj *= 1.05; for_.append(f"below flip ${gamma_flip:.0f} (puts ride negative γ)")
+
+    prob = max(0.0, min(0.95, p_touch * adj))
+    take = ok and (prob >= CONVICTION_MIN)
+    verdict = ("TAKE — believes target is reachable" if take
+               else ("SKIP — not confident target hits" if ok
+                     else "SKIP — target unrealistic (feasibility)"))
+    return {
+        "take": take, "prob": round(prob, 3), "base_prob": round(p_touch, 3),
+        "ratio": round(ratio, 2), "adj": round(adj, 2),
+        "for": for_, "against": against, "verdict": verdict, "feas_detail": feas_detail,
+    }
+
+
 def find_entry_contract(pool, target, max_spend, max_contracts):
     """
     Find best contract near target strike within budget.
@@ -1004,17 +1104,27 @@ def main():
                    "rip_fade": "RIP-FADE (call-wall fade)",
                    "gex_signal": "GEX signal"}.get(setup, setup)
 
-    # ── Feasibility gate: do the numbers make sense? Only take the trade if the
-    # +100% target is realistically reachable in the time left. ──
-    feasible, feas_ratio, feas_detail = target_feasibility(
-        spot, ask, delta, vix, target_strike=target, direction=direction)
-    log.info(f"FEASIBILITY: {feas_detail}")
-    if not feasible:
-        msg = (f"SKIP — target not realistic: {feas_detail}. "
-               f"Need {feas_ratio:.2f}σ (max {FEASIBILITY_MAX_SIGMA}σ).")
-        log.warning(msg)
-        write_gex_state({"last_action": f"NO TRADE — {feas_detail} "
-                                        f"({feas_ratio:.2f}σ > {FEASIBILITY_MAX_SIGMA}σ target). Sat out."})
+    # ── Critical-thinking decision: estimate the probability the +100% target is
+    # HIT, weigh the tailwinds/headwinds, and only take the trade if the bot
+    # genuinely believes it gets there. ──
+    decision = assess_trade(
+        spot, ask, delta, vix, direction, prev_close, gex_features,
+        spx_confirm=spx_state.get("spx_confirm"),
+        vanna_label=vanna_label, skew_label=skew_label, flow_label=flow_label,
+        gamma_flip=gamma_flip, pin=_pin)
+    feas_detail, feas_ratio = decision["feas_detail"], decision["ratio"]
+    log.info(f"THINK: {decision['verdict']}  P(hit)≈{decision['prob']*100:.0f}% "
+             f"(base {decision['base_prob']*100:.0f}% × {decision['adj']} flow)")
+    if decision["for"]:
+        log.info("  FOR:     " + "; ".join(decision["for"]))
+    if decision["against"]:
+        log.info("  AGAINST: " + "; ".join(decision["against"]))
+    if not decision["take"]:
+        why = ("; ".join(decision["against"]) or feas_detail)
+        log.warning(f"NO TRADE — {decision['verdict']}: {why}")
+        write_gex_state({"last_action":
+            f"NO TRADE — {decision['verdict']}. P(hit)≈{decision['prob']*100:.0f}% "
+            f"(< {int(CONVICTION_MIN*100)}% needed). {why}"})
         sys.exit(0)
 
     place_order(contract, expiration, direction, qty)
@@ -1068,6 +1178,9 @@ def main():
     print(f"  Stop loss:  ${total*0.5:.2f}  (-50%)")
     print(f"  Trail stop: activates at ${total*2:.2f}  (+100%), trails 25% from peak")
     print(f"  Feasible:   {feas_detail}  [{feas_ratio:.2f}σ / {FEASIBILITY_MAX_SIGMA}σ max]")
+    print(f"  Conviction: P(hit target)≈{decision['prob']*100:.0f}%  (need {int(CONVICTION_MIN*100)}%)  — {decision['verdict']}")
+    if decision["for"]:     print(f"    + {'; '.join(decision['for'])}")
+    if decision["against"]: print(f"    - {'; '.join(decision['against'])}")
     print(f"  GEX Conf:   {confidence*100:.0f}%")
     print(f"  Status:     {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
     print("="*60)
