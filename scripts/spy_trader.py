@@ -357,6 +357,47 @@ def find_king(nodes):
     if not nodes: return None, 0
     return max(nodes, key=lambda x: abs(x[1]))
 
+def compute_max_pain(calls, puts):
+    """Strike that minimizes total intrinsic payout to option holders — the
+    classic 0DTE gravity magnet. None if the chain is empty."""
+    all_k = sorted(set(float(o["strike_price"]) for o in calls) |
+                   set(float(o["strike_price"]) for o in puts))
+    if not all_k:
+        return None
+    coi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in calls}
+    poi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in puts}
+    max_pain, best = None, None
+    for k in all_k:
+        pay = (sum(coi.get(s, 0) * max(0.0, k - s) for s in all_k) +
+               sum(poi.get(s, 0) * max(0.0, s - k) for s in all_k))
+        if best is None or pay < best:
+            best, max_pain = pay, k
+    return max_pain
+
+def pin_reversion_direction(spot, gamma_flip, pin, king_gex=None):
+    """Regime-aware direction. king_gex's SIGN is a gamma-regime tell, not a
+    price bet — so we read the regime from the gamma flip and the bias from
+    where spot sits relative to the pin (gravity magnet):
+
+      * spot BELOW the gamma flip  → negative gamma (trending) → breakdown
+        continuation → PUT.
+      * spot ABOVE the flip (positive gamma / pinning) → mean-revert to the pin:
+          spot ABOVE pin → drift DOWN → PUT
+          spot BELOW pin → drift UP   → CALL
+      * at/near the pin, or no pin → default CALL bias (dealer bid).
+
+    Returns 'call' or 'put'.
+    """
+    tol = max(0.5, spot * 0.0007)   # ~$0.5 neutral band around the pin
+    if gamma_flip is not None and spot < gamma_flip - tol:
+        return "put"                # negative-gamma trend zone → follow the break down
+    if pin is not None:
+        if spot > pin + tol:
+            return "put"            # extended above the magnet → revert down
+        if spot < pin - tol:
+            return "call"           # below the magnet → revert up
+    return "call"
+
 def compute_opex_cycle(spot):
     """
     Monthly OPEX rubber band cycle.
@@ -692,15 +733,22 @@ def main():
     log.info(f"KING NODE: {king_strike}  GEX=${king_gex/1e6:.2f}M")
     log.info("Top nodes: " + "  ".join(f"{s}=${g/1e6:.1f}M" for s,g in sorted(nodes, key=lambda x: abs(x[1]), reverse=True)[:5]))
 
-    if king_gex >= 0:
-        direction, target, pool = "call", king_strike + 1, calls
-    else:
-        direction, target, pool = "put", king_strike - 1, puts
-    setup = "gex_signal"   # which procedure produced this entry (for journal + X tag)
-    log.info(f"DIRECTION: {direction.upper()} -> target {target}")
-
-    # GEX pattern analysis + dealer flow (needed by the dip-buy override below)
+    # GEX pattern analysis + dealer flow (needed for direction + the overrides below)
     gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+
+    # ── Direction: pin-reversion model (regime from gamma flip, bias from spot
+    # vs the pin) — NOT the raw king_gex sign, which only tells you the gamma
+    # regime, not which way price is headed. ──
+    _gflip = gex_features.get("gamma_flip", king_strike)
+    _pin   = compute_max_pain(calls, puts) or king_strike
+    direction = pin_reversion_direction(spot, _gflip, _pin, king_gex)
+    if direction == "call":
+        target, pool = king_strike + 1, calls
+    else:
+        target, pool = king_strike - 1, puts
+    setup = "gex_signal"   # which procedure produced this entry (for journal + X tag)
+    log.info(f"DIRECTION: {direction.upper()} -> target {target}  "
+             f"(spot=${spot:.2f} flip=${_gflip:.0f} pin=${_pin:.0f} kingGEX=${king_gex/1e6:+.1f}M)")
 
     # ── Rip-fade override (the mirror of the dip-buy) ──
     # In a positive-gamma PIN regime, price that has tagged the CALL WALL while
@@ -708,34 +756,26 @@ def main():
     # setup, even though it's above the flip. Tightly gated; every later gate
     # (OPEX, monthly wall, vanna, SPX confirm, confidence) still applies, so it
     # only fires when the rest of the procedure also supports a put.
+    # Detect the fade setup independently of the initial direction — pin-reversion
+    # may already have produced a PUT here, and Gate 5 needs the rip_fade flag to
+    # allow a put that sits above prev close.
     rip_fade = False
-    if direction == "call":
-        cw = gex_features.get("call_wall", 0)
-        # Max pain (the revert magnet) from the ATM chain OI.
-        _all_k = sorted(set(float(o["strike_price"]) for o in calls) |
-                        set(float(o["strike_price"]) for o in puts))
-        _coi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in calls}
-        _poi = {float(o["strike_price"]): float(o.get("open_interest", 0) or 0) for o in puts}
-        max_pain, _best = None, None
-        for _k in _all_k:
-            _pay = (sum(_coi.get(s, 0) * max(0.0, _k - s) for s in _all_k) +
-                    sum(_poi.get(s, 0) * max(0.0, s - _k) for s in _all_k))
-            if _best is None or _pay < _best:
-                _best, max_pain = _pay, _k
-        _vix_prev = get_vix_prev_close()
-        _vix_calm = (_vix_prev is None) or (vix <= _vix_prev * 1.02)
-        _concentration = gex_features.get("gex_concentration", 0) or 0
-        if (cw and (cw - RIP_FADE_NEAR) <= spot <= (cw + RIP_FADE_MAX_BREAK)   # AT the call wall
-                and max_pain and (spot - max_pain) >= RIP_FADE_MIN_ROOM        # extended above the pin
-                and _vix_calm                                                  # vol flat/falling
-                and king_gex >= 0                                              # positive gamma → pinning
-                and _concentration >= 0.20):                                  # a GENUINE pin (skill PIN regime)
-            direction, pool, target = "put", puts, int(round(spot)) - 1
-            rip_fade = True
-            setup = "rip_fade"
-            log.info(f"RIP-FADE OVERRIDE: SPY ${spot:.2f} AT call wall ${cw:.0f}, extended "
-                     f"${spot-max_pain:.1f} above max pain ${max_pain:.0f}, VIX calm → fade DOWN "
-                     f"with PUT (target {target})")
+    cw = gex_features.get("call_wall", 0)
+    max_pain = _pin   # the revert magnet, computed above
+    _vix_prev = get_vix_prev_close()
+    _vix_calm = (_vix_prev is None) or (vix <= _vix_prev * 1.02)
+    _concentration = gex_features.get("gex_concentration", 0) or 0
+    if (cw and (cw - RIP_FADE_NEAR) <= spot <= (cw + RIP_FADE_MAX_BREAK)   # AT the call wall
+            and max_pain and (spot - max_pain) >= RIP_FADE_MIN_ROOM        # extended above the pin
+            and _vix_calm                                                  # vol flat/falling
+            and king_gex >= 0                                              # positive gamma → pinning
+            and _concentration >= 0.20):                                  # a GENUINE pin (skill PIN regime)
+        direction, pool, target = "put", puts, int(round(spot)) - 1
+        rip_fade = True
+        setup = "rip_fade"
+        log.info(f"RIP-FADE: SPY ${spot:.2f} AT call wall ${cw:.0f}, extended "
+                 f"${spot-max_pain:.1f} above max pain ${max_pain:.0f}, VIX calm → fade DOWN "
+                 f"with PUT (target {target})")
 
     # Gate 5 — Regime confirm (price vs prev close)
     if direction == "call" and spot < prev_close - 0.50:

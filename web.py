@@ -223,7 +223,20 @@ def _cboe_analytics(payload):
 
     total_abs = sum(abs(r["net_gex_m"]) for r in ladder) or 1
     concentration = abs(king_gex_m) / total_abs
-    direction = "call" if king_gex_m >= 0 else "put"
+    # Direction: pin-reversion model. king_gex's SIGN is a gamma-regime tell, not
+    # a price bet — read the regime from the gamma flip and the bias from where
+    # spot sits vs the pin (max pain / king). Below flip = negative gamma (trend)
+    # → PUT; above flip = pinning → revert to pin (above pin PUT, below pin CALL).
+    _pin = max_pain if max_pain else king_strike
+    _tol = max(0.5, spot * 0.0007)
+    if gamma_flip is not None and spot < gamma_flip - _tol:
+        direction = "put"
+    elif _pin is not None and spot > _pin + _tol:
+        direction = "put"
+    elif _pin is not None and spot < _pin - _tol:
+        direction = "call"
+    else:
+        direction = "call"
 
     return {
         "spot":          round(spot, 2),
