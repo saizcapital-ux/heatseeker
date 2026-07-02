@@ -846,11 +846,15 @@ function renderCloud(d){
     var lows=candles.map(function(c){return c.l;}), highs=candles.map(function(c){return c.h;});
     var yLo=Math.min.apply(null,lows), yHi=Math.max.apply(null,highs);
     if(spot){yLo=Math.min(yLo,spot);yHi=Math.max(yHi,spot);}
-    // Include NEARBY trade levels so their LINES render — but never let a far
-    // (low-delta) stop/target balloon the range and squish the candles.
+    // Frame the range to the key GEX levels (flip / walls / king / max pain) so
+    // their LINES render — this is a GEX chart, you want price vs the walls.
+    var _glcap=Math.max(10, (spot||749)*0.02);
+    [d.gamma_flip,d.call_wall,d.put_wall,d.king_strike,d.max_pain].forEach(function(v){ if(v && spot && Math.abs(v-spot)<=_glcap){ yLo=Math.min(yLo,v); yHi=Math.max(yHi,v); } });
+    // Include NEARBY trade levels too — but never let a far (low-delta) stop/target
+    // balloon the range and squish the candles.
     var _cr=(yHi-yLo)||1, _cap=Math.max(6, _cr*1.5);
     if(d.trade_levels){ ['entry','stop','trail','target','be'].forEach(function(k){ var v=d.trade_levels[k]; if(v && Math.abs(v-spot)<=_cap){ yLo=Math.min(yLo,v); yHi=Math.max(yHi,v); } }); }
-    var pad=((yHi-yLo)*0.12)||1; yLo-=pad; yHi+=pad;
+    var pad=((yHi-yLo)*0.10)||1; yLo-=pad; yHi+=pad;
     layout.xaxis={type:'date',gridcolor:'rgba(28,32,48,.55)',tickformat:'%H:%M',rangeslider:{visible:false},color:C.muted,domain:[0,xR]};
     layout.yaxis.range=[yLo,yHi];
     layout.yaxis2={overlaying:'y',side:'right',showgrid:false,showticklabels:false,range:[0,mv*8]};
@@ -902,9 +906,11 @@ function renderCloud(d){
     var hx=hist.map(function(p){return p.t;});
     var sp=hist.map(function(p){return p.spot;}).filter(Boolean);
     var yLo=Math.min.apply(null,sp), yHi=Math.max.apply(null,sp); if(spot){yLo=Math.min(yLo,spot);yHi=Math.max(yHi,spot);}
+    var _glc=Math.max(10,(spot||749)*0.02);
+    [d.gamma_flip,d.call_wall,d.put_wall,d.king_strike,d.max_pain].forEach(function(v){ if(v && spot && Math.abs(v-spot)<=_glc){ yLo=Math.min(yLo,v); yHi=Math.max(yHi,v); } });
     var _cr2=(yHi-yLo)||1, _cap2=Math.max(6, _cr2*1.5);
     if(d.trade_levels){ ['entry','stop','trail','target','be'].forEach(function(k){ var v=d.trade_levels[k]; if(v && Math.abs(v-spot)<=_cap2){ yLo=Math.min(yLo,v); yHi=Math.max(yHi,v); } }); }
-    var pad=((yHi-yLo)*0.18)||1; yLo-=pad; yHi+=pad;
+    var pad=((yHi-yLo)*0.15)||1; yLo-=pad; yHi+=pad;
     traces=[{type:'scatter',mode:'lines',x:hx,y:hist.map(function(p){return p.spot;}),line:{color:'#fff',width:2},name:'Spot',hovertemplate:'%{x} spot %{y:.2f}<extra></extra>'}];
     layout.xaxis={type:'category',gridcolor:'rgba(28,32,48,.55)',color:C.muted,nticks:8};
     layout.yaxis.range=[yLo,yHi];
