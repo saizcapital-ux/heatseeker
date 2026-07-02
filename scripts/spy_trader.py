@@ -24,6 +24,9 @@ VIX_MIN        = 14.0
 VIX_MAX        = 28.0
 DELTA_MIN      = 0.15     # lowered: allow cheap OTM contracts when balance < $100
 DELTA_MAX      = 0.55
+DELTA_FLOOR    = 0.10     # hard floor: never buy below this delta, even on the
+                          # low-balance fallback — deeper-OTM 0DTE puts/calls are
+                          # near-certain-loss lottery tickets. Skip the trade instead.
 DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
 # Rip-fade (mirror of dip-buy): fade the CALL WALL with puts in a pinning regime
 RIP_FADE_NEAR      = 0.50  # spot within $ below the call wall counts as "at" it
@@ -613,11 +616,14 @@ def find_entry_contract(pool, target, max_spend, max_contracts):
             log.info(f"Pass-2 contract: strike={o['strike_price']} delta={d:.2f} cost=${cost:.2f}")
             return o
 
-    # Pass 3: low-balance fallback — find cheapest affordable contract in entire pool
+    # Pass 3: low-balance fallback — cheapest affordable contract, but NEVER below
+    # the delta floor. A sub-0.10-delta 0DTE contract is a lottery ticket that
+    # decays to zero on a normal day; taking no trade beats lighting money on fire.
     if low_balance:
         log.warning("Pass 2 failed — low-balance fallback: scanning full chain for cheapest affordable")
         affordable = [(o, o["ask_price"] * 100) for o in candidates
-                      if 0 < o["ask_price"] * 100 <= max_spend]
+                      if 0 < o["ask_price"] * 100 <= max_spend
+                      and o.get("delta", 0) >= DELTA_FLOOR]      # skip junk-delta tickets
         if affordable:
             # prefer the one closest to target strike that is affordable
             affordable.sort(key=lambda x: abs(float(x[0]["strike_price"]) - target))
@@ -625,6 +631,8 @@ def find_entry_contract(pool, target, max_spend, max_contracts):
             o["_contracts"] = 1
             log.info(f"Pass-3 contract: strike={o['strike_price']} delta={o.get('delta',0):.2f} cost=${cost:.2f}")
             return o
+        log.warning(f"Pass 3: no contract >= {DELTA_FLOOR} delta within ${max_spend:.0f} "
+                    f"— skipping trade (near-ATM 0DTE unaffordable at this balance)")
 
     return None
 
