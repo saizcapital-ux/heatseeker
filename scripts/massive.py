@@ -20,7 +20,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
-BASE = "https://api.massive.com"
+BASE = os.getenv("MASSIVE_BASE_URL", "https://api.massive.com").rstrip("/")
 STRIKE_WINDOW_SPY = 25
 STRIKE_WINDOW_SPX = 250
 
@@ -247,3 +247,71 @@ def diagnose(underlying="SPY", window=None):
     if not patch:
         return None, f"parsed {len(results)} contracts but no usable gamma (no greeks?)"
     return patch, "ok"
+
+
+def list_contracts(underlying="SPY", expiration=None, limit=250, max_pages=6):
+    """Pull a live chain snapshot and return contracts as flat dicts sorted by
+    (expiration_date, strike_price, contract_type). Raises on API/network error."""
+    results = chain_snapshot(underlying, expiration=expiration,
+                             expiration_gte=None if expiration else
+                             datetime.now(ET).strftime("%Y-%m-%d"),
+                             limit=limit, max_pages=max_pages)
+    rows = []
+    for r in results:
+        typ, k, exp = _contract(r)
+        if typ is None or k is None or exp is None:
+            continue
+        rows.append({
+            "expiration": exp, "type": str(typ).upper()[:1], "strike": float(k),
+            "delta": _f(r, "greeks", "delta", default=None),
+            "gamma": _f(r, "greeks", "gamma", default=None),
+            "theta": _f(r, "greeks", "theta", default=None),
+            "vega":  _f(r, "greeks", "vega",  default=None),
+            "iv":    _f(r, "implied_volatility", default=None),
+            "oi":    _f(r, "open_interest", default=None),
+            "vol":   _f(r, "day", "volume", default=None),
+            "underlying": _f(r, "underlying_asset", "price",
+                             default=_f(r, "underlying_asset", "last_price")),
+        })
+    rows.sort(key=lambda x: (x["expiration"], x["strike"], x["type"]))
+    return rows
+
+
+if __name__ == "__main__":
+    # Diagnostic CLI:  python -m scripts.massive [SPY|I:SPX] [YYYY-MM-DD]
+    # Authenticates, pulls a live option-chain snapshot, prints contracts
+    # sorted by expiration then strike. Use this on Railway to verify the key.
+    import sys
+    und = sys.argv[1] if len(sys.argv) > 1 else "SPY"
+    exp = sys.argv[2] if len(sys.argv) > 2 else None
+    if not enabled():
+        print("MASSIVE_API_KEY not set — export it first."); sys.exit(1)
+    print(f"host={BASE}  underlying={und}  expiration={exp or 'nearest 0DTE+'}")
+    try:
+        rows = list_contracts(und, expiration=exp)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try: body = e.read().decode()[:300]
+        except Exception: pass
+        print(f"HTTP {e.code} — {body.strip()}"); sys.exit(2)
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}"); sys.exit(2)
+    if not rows:
+        print("0 contracts returned (check ticker / entitlement / market hours)."); sys.exit(3)
+    spot = next((r["underlying"] for r in rows if r["underlying"]), None)
+    print(f"{len(rows)} contracts   underlying≈{spot}\n")
+    hdr = f"{'EXPIRY':<11}{'T':<2}{'STRIKE':>9}{'DELTA':>8}{'GAMMA':>9}{'IV':>7}{'OI':>9}{'VOL':>9}"
+    print(hdr); print("-" * len(hdr))
+    for r in rows[:60]:
+        def g(v, f): return (f % v) if isinstance(v, (int, float)) else "-"
+        print(f"{r['expiration']:<11}{r['type']:<2}{r['strike']:>9.2f}"
+              f"{g(r['delta'],'%8.3f')}{g(r['gamma'],'%9.5f')}{g(r['iv'],'%7.3f')}"
+              f"{g(r['oi'],'%9.0f')}{g(r['vol'],'%9.0f')}")
+    if len(rows) > 60:
+        print(f"... (+{len(rows) - 60} more)")
+    patch, reason = diagnose(und)
+    print(f"\nGEX diagnose: {reason}")
+    if patch:
+        print(f"  king=${patch['king_strike']} flip=${patch['gamma_flip']} "
+              f"net_gex={patch['net_gex_total']} call_wall={patch['call_wall']} "
+              f"put_wall={patch['put_wall']} src={patch['gex_source']}")
