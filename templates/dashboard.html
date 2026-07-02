@@ -201,6 +201,16 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .sbtn:hover { border-color:var(--muted); }
 .sbtn.x { background:#000; border-color:#333; color:#fff; }
 .sbtn.copied { background:rgba(0,208,132,.16); border-color:var(--green); color:var(--green); }
+.h-val.exp-ok{color:#e6e9f0;} .h-val.exp-warn{color:var(--yellow);} .h-val.exp-hot{color:var(--red);}
+@keyframes flashred { 0%,100%{color:var(--red);} 50%{color:#7a1020;} }
+.h-val.exp-flash{ animation:flashred 1s infinite; }
+#pressure-banner { display:none; height:22px; min-height:22px; align-items:center; justify-content:center; gap:8px; background:rgba(245,200,66,.12); border-bottom:1px solid rgba(245,200,66,.3); color:var(--yellow); font-size:11px; font-weight:700; letter-spacing:.5px; flex-shrink:0; }
+#flow-strip { height:24px; min-height:24px; display:flex; align-items:center; gap:10px; padding:0 14px; background:#0b0e16; border-bottom:1px solid var(--border); flex-shrink:0; overflow:hidden; }
+#flow-strip .fk { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; flex-shrink:0; }
+#flow-strip .fv { font-size:11px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#dealer-range { margin-left:auto; flex-shrink:0; font-size:10px; color:var(--muted); }
+#dealer-range b { color:var(--blue); }
+.sb-v.pin{color:var(--green);} .sb-v.trend{color:var(--red);} .sb-v.light{color:var(--yellow);} .sb-v.nearflip{color:var(--orange);}
 </style>
 </head>
 <body>
@@ -212,6 +222,11 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
     <div class="h-price"><span class="h-label">VIX</span><span class="h-val vix" id="h-vix">--</span><span class="h-sub" id="h-ts">--</span></div>
     <div class="h-price"><span class="h-label">VIX3M</span><span class="h-val vix" id="h-vix3m">--</span><span class="h-sub">term</span></div>
     <div class="h-price"><span class="h-label">SPX <span style="color:var(--purple)">▪</span></span><span class="h-val" id="h-spx" style="color:var(--purple)">--</span><span class="h-sub" id="h-spx-ratio">real money</span></div>
+    <div class="h-price" title="VolSignals: dealer Vega pressure builds into VIX expiration (its own Wed cycle), not SPX OPEX.">
+      <span class="h-label">VIX EXP · OPEX</span>
+      <span class="h-val" id="h-vixexp" style="font-size:12px">--</span>
+      <span class="h-sub" id="h-opex">OPEX --</span>
+    </div>
     <div class="h-price"><span class="h-label">Balance</span><span class="h-val bal" id="h-bal">--</span><span class="h-sub">agentic</span></div>
     <div class="h-price"><span class="h-label">Realized P&amp;L</span><span class="h-val pnl" id="h-pnl">--</span><span class="h-sub" id="h-wr">--</span></div>
   </div>
@@ -254,6 +269,13 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="sb-item"><span class="sb-k">IVR</span><span class="sb-v" id="sb-ivr">--</span></div>
   <div class="sb-item"><span class="sb-k">VRP</span><span class="sb-v" id="sb-vrp">--</span></div>
   <span style="margin-left:auto;font-size:9px;color:var(--muted)">walls &amp; levels → on chart</span>
+</div>
+
+<div id="pressure-banner">⚡ VIX PRESSURE WINDOW — dealer Vega pressure building into VIX expiration · vol compression/expansion setups active</div>
+<div id="flow-strip">
+  <span class="fk">🔎 Flow Reading</span>
+  <span class="fv" id="flow-reading">Waiting for GEX scan…</span>
+  <span id="dealer-range">Dealer range —</span>
 </div>
 
 <div id="body">
@@ -345,8 +367,39 @@ function updateClock(){
   document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US',o)+' ET';
   var s=marketSession(), b=document.getElementById('sess-badge');
   if(b){ b.textContent=s.code; b.className='sess-badge '+s.cls; }
+  updateExpiry();
 }
 setInterval(updateClock,1000); updateClock();
+
+// ── Dual expiry countdown (VolSignals: VIX EXP ≠ SPX OPEX) ──
+function nthWeekday(y,m,wd,n){ var d=new Date(Date.UTC(y,m,1)); var add=((wd-d.getUTCDay())+7)%7 + (n-1)*7; return new Date(Date.UTC(y,m,1+add)); }
+function thirdFriday(y,m){ return nthWeekday(y,m,5,3); }   // SPX monthly OPEX
+function nextThirdFriday(now){ var y=now.getUTCFullYear(),m=now.getUTCMonth(),tf=thirdFriday(y,m);
+  if(tf<now){ m++; if(m>11){m=0;y++;} tf=thirdFriday(y,m); } return tf; }
+// VIX monthly exp ≈ the Wednesday 30 days before the FOLLOWING month's 3rd Friday
+function nextVixExp(now){
+  var y=now.getUTCFullYear(), m=now.getUTCMonth();
+  for(var i=0;i<4;i++){ var fm=m+i+1, fy=y; while(fm>11){fm-=12;fy++;}
+    var vx=new Date(thirdFriday(fy,fm).getTime()-30*86400000);
+    if(vx>=now) return vx; }
+  return null;
+}
+function fmtCountdown(target,now){ if(!target) return '--';
+  var ms=target-now, d=Math.floor(ms/86400000), h=Math.floor((ms%86400000)/3600000);
+  return d+'d '+h+'h'; }
+function expClass(target,now){ if(!target) return 'exp-ok';
+  var days=(target-now)/86400000;
+  return days<2?'exp-flash':days<5?'exp-hot':days<10?'exp-warn':'exp-ok'; }
+function updateExpiry(){
+  var now=new Date();
+  var vx=nextVixExp(now), op=nextThirdFriday(now);
+  var ve=document.getElementById('h-vixexp'), oe=document.getElementById('h-opex');
+  if(ve){ ve.textContent='VIX '+fmtCountdown(vx,now); ve.className='h-val '+expClass(vx,now); }
+  if(oe){ oe.textContent='OPEX '+fmtCountdown(op,now); }
+  // Pressure window: within ~5 trading days (7 cal days) before VIX exp
+  var pb=document.getElementById('pressure-banner');
+  if(pb){ var days=vx?(vx-now)/86400000:99; pb.style.display=(days>0&&days<=7)?'flex':'none'; }
+}
 
 /* Tabs */
 document.querySelectorAll('.tab').forEach(function(t){
@@ -419,8 +472,8 @@ function renderSignal(d){
   else if(d.spx_confirm==='DIVERGENT'){ sc.textContent='✗ '+(d.spx_direction||'').toUpperCase(); sc.style.color=C.red; }
   else if(d.spx_direction){ sc.textContent=d.spx_direction.toUpperCase(); sc.style.color=C.purple; }
   else { sc.textContent='--'; sc.style.color=C.muted; }
-  var vix=d.vix||0, reg=vix?(vix>35?'CRISIS':vix>25?'FEAR':vix>18?'CAUTION':vix>13?'NORMAL':'LOW'):'--';
-  document.getElementById('sb-regime').textContent=reg;
+  var reg=regimeState(d);
+  var rEl=document.getElementById('sb-regime'); rEl.textContent=reg.code; rEl.className='sb-v '+reg.cls;
   var ts=d.ts_label||'', tse=document.getElementById('sb-ts'); tse.textContent=ts.replace(/_/g,' ')||'--'; tse.className='sb-v '+(ts||'');
   document.getElementById('sb-vanna').textContent=d.vanna_label?d.vanna_label.replace(/_/g,' '):'--';
   var ivrEl=document.getElementById('sb-ivr');
@@ -428,6 +481,40 @@ function renderSignal(d){
   else ivrEl.textContent='--';
   var vrpEl=document.getElementById('sb-vrp');
   vrpEl.textContent=d.vrp_label?d.vrp_label.replace(/_/g,' '):'--';
+}
+
+// ── Regime intelligence (VolSignals 4 sub-states) ──
+function regimeState(d){
+  var net=d.net_gex_total, spot=d.spot, flip=d.gamma_flip;
+  if(spot&&flip&&Math.abs(spot-flip)/spot<0.005) return {code:'NEAR FLIP',cls:'nearflip'};
+  // Flip-primary (matches the chart banner): above γ-flip = long-gamma/pin, below = trend.
+  if(spot&&flip){
+    if(spot<flip) return {code:'-GEX TREND',cls:'trend'};
+    return (net!=null && net>0 && net<2) ? {code:'+GEX LIGHT',cls:'light'} : {code:'+GEX PIN',cls:'pin'};
+  }
+  if(net==null) return {code:'--',cls:''};
+  if(net>0) return net>=2 ? {code:'+GEX PIN',cls:'pin'} : {code:'+GEX LIGHT',cls:'light'};
+  return {code:'-GEX TREND',cls:'trend'};
+}
+
+// ── Feature 7: live flow-reading interpreter + dealer range ──
+function renderFlowReading(d){
+  var reg=regimeState(d), vanna=(d.vanna_label||'').toLowerCase();
+  var et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'})), min=et.getHours()*60+et.getMinutes();
+  var lateCharm = min>=780;   // after ~1pm ET, charm pin builds into the close
+  var msg;
+  if(reg.code==='NEAR FLIP') msg='Price at the γ-flip — dealer near gamma-neutral. Both stabilizing & destabilizing forces active: highest whipsaw risk. Reduce size, wait for a confirmed break.';
+  else if(reg.code==='-GEX TREND') msg='Dealer SHORT gamma — pulling quotes, buying rips & selling dips. Moves get amplified. Trust momentum, avoid fades, favor directional.';
+  else if(vanna.indexOf('bid')>-1) msg='Vanna tailwind — rising IV expanding dealer delta → forced buying into rallies. Momentum has mechanical support, not just retail FOMO.';
+  else if(lateCharm && reg.code.indexOf('+GEX')>-1) msg='Charm decay into the close — clock pulls delta toward ATM. Near-expiry strikes act as magnets; don’t chase breakouts in the final hour.';
+  else if(reg.code==='+GEX PIN') msg='Dealer LONG gamma — adding to bid AND offer. Slow, contained action. Fades are highest-probability; prefer spreads, don’t chase breakouts.';
+  else if(reg.code==='+GEX LIGHT') msg='Positive but thin gamma — the pin is weakening. Watch for a flip to trend mode; keep size modest.';
+  else msg='Awaiting GEX scan for a dealer-flow read.';
+  document.getElementById('flow-reading').textContent=msg;
+  var dr=document.getElementById('dealer-range');
+  if(d.put_wall&&d.call_wall){ var mid=d.max_pain||d.king_strike||Math.round((d.put_wall+d.call_wall)/2);
+    dr.innerHTML='Dealer range <b>$'+d.put_wall+'–$'+d.call_wall+'</b> · mid $'+mid; }
+  else dr.textContent='Dealer range —';
 }
 
 /* Bot brain */
@@ -884,6 +971,7 @@ function poll(){
   ]).then(function(res){
     var d=res[0]; lastState=d; lastHistory=(res[1]&&res[1].history)||[];
     renderHeader(d); renderBot(d); renderSignal(d); renderBrain(d);
+    renderFlowReading(d);
     computeEvents(lastHistory,d);
     renderPositions(d); renderFlow(d); renderStats(d); renderJournal(d);
     renderMainChart(d);
