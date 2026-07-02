@@ -805,7 +805,7 @@ function renderCloud(d){
     if(d.trade_levels){
       var tl=d.trade_levels;
       (mob
-        ? [{y:tl.entry,c:'#fff',t:'ENT',w:1.5},{y:tl.target,c:C.green,t:'TGT',w:1},{y:tl.stop,c:C.red,t:'STP',w:1.5}]
+        ? [{y:tl.entry,c:'#fff',t:'ENT',w:1.5},{y:tl.target,c:C.green,t:'TGT',w:1},{y:tl.trail,c:C.yellow,t:'TRL',w:1},{y:tl.stop,c:C.red,t:'STP',w:1.5}]
         : [{y:tl.entry, c:'#fff',t:'▶ ENTRY',w:1.5},{y:tl.target,c:C.green,t:'★ TARGET',w:1},
            {y:tl.trail, c:C.yellow,t:'⚑ TRAIL',w:1},{y:tl.stop,c:C.red,t:'✖ STOP',w:1.5},{y:tl.be,c:C.blue,t:'B/E',w:1}]
       ).forEach(function(x){ if(!x.y) return;
@@ -949,7 +949,7 @@ function renderMigration(d){
   // Trade-lifecycle levels for the open position (mobile: short labels, key 3).
   if(TL){
     (mob
-      ? [{y:TL.entry,c:'#fff',t:'ENT',w:1.5},{y:TL.target,c:C.green,t:'TGT',w:1},{y:TL.stop,c:C.red,t:'STP',w:1.5}]
+      ? [{y:TL.entry,c:'#fff',t:'ENT',w:1.5},{y:TL.target,c:C.green,t:'TGT',w:1},{y:TL.trail,c:C.yellow,t:'TRL',w:1},{y:TL.stop,c:C.red,t:'STP',w:1.5}]
       : [{y:TL.entry,c:'#fff',t:'▶ ENTRY',w:1.5},{y:TL.target,c:C.green,t:'★ TARGET',w:1},
          {y:TL.trail,c:C.yellow,t:'⚑ TRAIL',w:1},{y:TL.stop,c:C.red,t:'✖ STOP',w:1.5},{y:TL.be,c:C.blue,t:'B/E',w:1}]
     ).forEach(function(x){ if(!x.y) return;
@@ -991,7 +991,7 @@ function renderProfile(d){
   if(d.king_strike)items.push({y:d.king_strike,c:C.orange,text:'KING '+Math.round(d.king_strike)});
   if(TL){
     (mob
-      ? [{y:TL.entry,c:'#fff',t:'ENT',w:1.5},{y:TL.target,c:C.green,t:'TGT',w:1},{y:TL.stop,c:C.red,t:'STP',w:1.5}]
+      ? [{y:TL.entry,c:'#fff',t:'ENT',w:1.5},{y:TL.target,c:C.green,t:'TGT',w:1},{y:TL.trail,c:C.yellow,t:'TRL',w:1},{y:TL.stop,c:C.red,t:'STP',w:1.5}]
       : [{y:TL.entry,c:'#fff',t:'▶ ENTRY',w:1.5},{y:TL.target,c:C.green,t:'★ TARGET',w:1},
          {y:TL.trail,c:C.yellow,t:'⚑ TRAIL',w:1},{y:TL.stop,c:C.red,t:'✖ STOP',w:1.5},{y:TL.be,c:C.blue,t:'B/E',w:1}]
     ).forEach(function(x){ if(!x.y) return;
