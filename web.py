@@ -346,7 +346,7 @@ def _refresh_yf_candles(force=False):
     RH data path). Throttled; skipped once RH candles are flowing."""
     global _yf_candle_last
     now = time.time()
-    if not force and now - _yf_candle_last < 120:
+    if not force and now - _yf_candle_last < 60:
         return
     _yf_candle_last = now
     try:
@@ -476,10 +476,13 @@ def _ticker():
             _refresh_cboe_gex()
         except Exception as e:
             log.debug(f"CBOE refresh error: {e}")
-        # Not logged in: keep the chart alive with keyless candles and kick off
-        # the (blocking) login in the background so it never stalls this loop.
+        # yfinance is the candle source ALWAYS — it's keyless, real-time, and far
+        # richer than RH's sparse 5-min span=day set (~74 bars vs ~16), so the GEX
+        # Cloud keeps building bars through the day instead of freezing on login.
+        _refresh_yf_candles()
+        # Kick off the (blocking) RH login in the background so it never stalls
+        # this loop.
         if not logged_in:
-            _refresh_yf_candles()
             if not _rh_login_inflight and os.getenv("RH_USERNAME") and os.getenv("RH_PASSWORD"):
                 _rh_login_inflight = True
                 threading.Thread(target=_rh_login_worker, daemon=True).start()
@@ -614,39 +617,10 @@ def _ticker():
                 except Exception as pe:
                     log.warning(f"positions fetch error: {pe}")
 
-                # Intraday SPY candles (5-min bars). Try extended-hours first (so
-                # the chart is populated before 9:30); fall back to regular hours.
-                # Each attempt is guarded independently — a throw on one (e.g. an
-                # older robin_stocks that rejects bounds="trading") must not skip
-                # the others.
-                try:
-                    bars = []
-                    for kwargs in ({"bounds": "trading"}, {}):
-                        try:
-                            bars = rh.stocks.get_stock_historicals(
-                                "SPY", interval="5minute", span="day", **kwargs) or []
-                        except Exception as be:
-                            log.debug(f"candle attempt {kwargs} failed: {be}")
-                            bars = []
-                        if bars:
-                            break
-                    candles = []
-                    for bar in bars:
-                        t = bar.get("begins_at", "")
-                        o = float(bar.get("open_price") or 0)
-                        h = float(bar.get("high_price") or 0)
-                        l = float(bar.get("low_price") or 0)
-                        c = float(bar.get("close_price") or 0)
-                        v = int(float(bar.get("volume") or 0))
-                        sess = bar.get("session", "reg")   # 'pre' | 'reg' | 'post'
-                        if o and h and l and c:
-                            candles.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v, "s": sess})
-                    if candles:
-                        patch["candles"] = candles
-                        pre = sum(1 for x in candles if x["s"] != "reg")
-                        log.info(f"candles: {len(candles)} bars ({pre} pre/post)")
-                except Exception as ce:
-                    log.warning(f"candle fetch error: {ce}")
+                # Intraday candles are handled by _refresh_yf_candles() above
+                # (yfinance is keyless, real-time, and far richer than RH's sparse
+                # 5-min span=day set), so we no longer fetch candles from RH here —
+                # that used to overwrite the rich chart with ~16 bars on login.
 
                 # GEX is computed by the scheduler worker and pushed via /api/push
                 # Removed from web ticker — find_options_by_expiration loads 7+ pages
