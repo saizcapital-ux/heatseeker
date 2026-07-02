@@ -258,11 +258,15 @@ def _refresh_cboe_gex():
     try:
         import scripts.massive as massive
         if massive.enabled():
-            patch = massive.compute("SPY")
+            patch, reason = massive.diagnose("SPY")
             if patch:
                 log.info(f"Massive real-time GEX: king=${patch['king_strike']} flip=${patch['gamma_flip']} strikes={len(patch['strike_ladder'])}")
+            else:
+                log.warning(f"Massive GEX unavailable — falling back to CBOE: {reason}")
+        else:
+            log.info("MASSIVE_API_KEY not set — using CBOE 15-min delayed GEX")
     except Exception as e:
-        log.debug(f"Massive GEX failed, falling back to CBOE: {e}")
+        log.warning(f"Massive GEX errored, falling back to CBOE: {e}")
         patch = None
     # 2) CBOE — 15-min delayed fallback
     if not patch:

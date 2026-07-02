@@ -15,7 +15,7 @@ API: GET https://api.massive.com/v3/snapshot/options/{TICKER}?apiKey=...
 The API key is read from MASSIVE_API_KEY — never hard-coded. Every call is
 best-effort: any failure returns None so callers fall back to CBOE.
 """
-import os, json, math, urllib.request, urllib.parse
+import os, json, math, urllib.request, urllib.parse, urllib.error
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -218,3 +218,32 @@ def compute(underlying="SPY", window=None):
         return analytics(results, window)
     except Exception:
         return None
+
+
+def diagnose(underlying="SPY", window=None):
+    """Like compute() but returns (patch, reason). reason is a human-readable
+    string explaining why the call fell back (None patch), for surfacing in logs.
+    Never raises."""
+    if not enabled():
+        return None, "MASSIVE_API_KEY not set"
+    window = window or (STRIKE_WINDOW_SPX if underlying.startswith("I:") else STRIKE_WINDOW_SPY)
+    try:
+        today = datetime.now(ET).strftime("%Y-%m-%d")
+        results = chain_snapshot(underlying, expiration_gte=today, limit=250)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()[:200]
+        except Exception:
+            pass
+        return None, f"HTTP {e.code} from Massive ({body.strip()})"
+    except urllib.error.URLError as e:
+        return None, f"network error reaching Massive: {e.reason}"
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+    if not results:
+        return None, "Massive returned 0 contracts (check ticker/entitlement/market hours)"
+    patch = analytics(results, window)
+    if not patch:
+        return None, f"parsed {len(results)} contracts but no usable gamma (no greeks?)"
+    return patch, "ok"
