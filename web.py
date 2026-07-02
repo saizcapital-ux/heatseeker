@@ -245,20 +245,35 @@ def _cboe_analytics(payload):
     }
 
 def _refresh_cboe_gex():
-    """Compute GEX from the CBOE feed and write it as the base layer — unless a
-    fresh Robinhood scan is already authoritative (then only refresh spot/VIX)."""
+    """Compute GEX for the dashboard base layer. Prefer Massive real-time data
+    when MASSIVE_API_KEY is set, else the CBOE 15-min-delayed feed. A fresh
+    Robinhood scan still overrides both (then we only refresh spot/VIX)."""
     global _cboe_last
     now = time.time()
     if now - _cboe_last < CBOE_REFRESH_SEC:
         return
     _cboe_last = now
+    patch = None
+    # 1) Massive — real-time full-market options data (preferred)
     try:
-        patch = _cboe_analytics(_fetch_json(CBOE_URL))
+        import scripts.massive as massive
+        if massive.enabled():
+            patch = massive.compute("SPY")
+            if patch:
+                log.info(f"Massive real-time GEX: king=${patch['king_strike']} flip=${patch['gamma_flip']} strikes={len(patch['strike_ladder'])}")
     except Exception as e:
-        log.debug(f"CBOE fetch/parse failed: {e}")
-        return
+        log.debug(f"Massive GEX failed, falling back to CBOE: {e}")
+        patch = None
+    # 2) CBOE — 15-min delayed fallback
+    if not patch:
+        try:
+            patch = _cboe_analytics(_fetch_json(CBOE_URL))
+        except Exception as e:
+            log.debug(f"CBOE fetch/parse failed: {e}")
+            return
     if not patch:
         return
+    patch["gex_ts"] = now
     # VIX from CBOE index feed (best-effort)
     try:
         vd = (_fetch_json(CBOE_VIX_URL) or {}).get("data", {})
@@ -901,6 +916,11 @@ def _health_checks():
     checks.append({"name": "Trading mode", "ok": True,
                    "detail": ("REAL MONEY — agentic account only" if not dry
                               else "DRY-RUN (paper) — set DRY_RUN=false for live")})
+
+    massive_on = bool(os.getenv("MASSIVE_API_KEY"))
+    checks.append({"name": "Options data feed", "ok": True,
+                   "detail": ("Massive real-time (MASSIVE_API_KEY set)" if massive_on
+                              else "CBOE 15-min delayed — set MASSIVE_API_KEY for real-time")})
 
     tw_on   = os.getenv("TWITTER_ENABLED", "false").lower() == "true"
     tw_keys = all(os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_SECRET",

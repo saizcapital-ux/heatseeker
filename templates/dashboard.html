@@ -463,7 +463,8 @@ function renderHeader(d){
   pe.textContent=(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2); pe.className='h-val pnl '+(pnl>0?'pos':pnl<0?'neg':'');
   var rh=document.getElementById('rh-badge');
   if(d.rh_logged_in){rh.className='rh-badge ok';rh.textContent='RH LIVE';}else{rh.className='rh-badge err';rh.textContent='RH --';}
-  var gsrc = d.gex_source==='robinhood' ? '<b>Robinhood</b> live GEX'
+  var gsrc = d.gex_source==='massive' ? '<b>Massive</b> real-time GEX'
+           : d.gex_source==='robinhood' ? '<b>Robinhood</b> live GEX'
            : d.gex_source==='cboe' ? '<b>CBOE</b> GEX (15-min delayed)'
            : '<b>--</b>';
   var exp = d.gex_expiry ? ' · exp '+d.gex_expiry.slice(5) : '';

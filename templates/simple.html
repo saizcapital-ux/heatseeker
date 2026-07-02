@@ -351,7 +351,7 @@ function render(d){
     }).join('');
   }
 
-  document.getElementById('updated').textContent = 'Updated '+(d.market_updated||d.ts||'')+' · data '+(d.gex_source==='robinhood'?'live':'15-min delayed');
+  document.getElementById('updated').textContent = 'Updated '+(d.market_updated||d.ts||'')+' · data '+(d.gex_source==='massive'?'real-time':d.gex_source==='robinhood'?'live':'15-min delayed');
 }
 
 function poll(){

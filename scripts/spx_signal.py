@@ -142,12 +142,36 @@ def analyze(payload, window=SPX_STRIKE_WINDOW):
     }
 
 
-def compute(spy_spot=None, payload=None):
-    """Fetch (or accept) SPX data and return the signal with SPY-scaled levels."""
+def _from_massive():
+    """Real-time SPX GEX via Massive (I:SPX), mapped to this module's raw shape."""
     try:
-        raw = analyze(payload if payload is not None else fetch_json(CBOE_SPX_URL))
+        import scripts.massive as massive
+        if not massive.enabled():
+            return None
+        m = massive.compute("I:SPX")
+        if not m:
+            return None
+        sp = m["spot"]
+        return {"spx_spot": sp, "expiry": m.get("gex_expiry"), "direction": m["direction"],
+                "regime": "positive" if sp >= m["gamma_flip"] else "negative",
+                "net_gex": m["net_gex_total"], "king": m["king_strike"], "king_gex": m["king_gex_m"],
+                "gamma_flip": m["gamma_flip"], "call_wall": m["call_wall"],
+                "put_wall": m["put_wall"], "max_pain": m["max_pain"]}
     except Exception:
         return None
+
+
+def compute(spy_spot=None, payload=None):
+    """Fetch (or accept) SPX data and return the signal with SPY-scaled levels.
+    Prefers Massive real-time; falls back to the CBOE 15-min feed."""
+    raw = None
+    if payload is None:
+        raw = _from_massive()
+    if raw is None:
+        try:
+            raw = analyze(payload if payload is not None else fetch_json(CBOE_SPX_URL))
+        except Exception:
+            return None
     if not raw:
         return None
     ratio = round(raw["spx_spot"] / spy_spot, 4) if spy_spot else 10.0
