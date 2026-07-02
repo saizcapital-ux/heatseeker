@@ -27,6 +27,10 @@ DELTA_MAX      = 0.55
 DELTA_FLOOR    = 0.10     # hard floor: never buy below this delta, even on the
                           # low-balance fallback — deeper-OTM 0DTE puts/calls are
                           # near-certain-loss lottery tickets. Skip the trade instead.
+TAKE_PROFIT_PCT   = 1.00  # exit target: +100% (double the premium)
+FEASIBILITY_MAX_SIGMA = 1.25  # skip a trade if hitting the +100% target needs a
+                          # bigger underlying move than this many expected-σ (from
+                          # VIX × time-to-close). >1.25σ intraday is not realistic.
 DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
 # Rip-fade (mirror of dip-buy): fade the CALL WALL with puts in a pinning regime
 RIP_FADE_NEAR      = 0.50  # spot within $ below the call wall counts as "at" it
@@ -579,6 +583,36 @@ def find_absolute_gamma_strike(calls, puts):
     log.info(f"Absolute Gamma Strike / Pin Target (SpotGamma AGS): ${ags:.0f}")
     return ags
 
+def target_feasibility(spot, ask, delta, vix, target_strike=None, direction=None):
+    """Does the numbers-check the user asked for: can this trade realistically
+    hit its +100% (2x) exit before the 0DTE close?
+
+    - Required underlying move to double the premium ≈ ask/delta (first-order:
+      Δoption ≈ delta·Δspot; gamma makes it a touch easier, theta a touch harder,
+      which roughly offset for a same-day double).
+    - Expected 1σ move left in the session from VIX: spot·(VIX/100)·√(t_years).
+    - ratio = required move ÷ expected move, in σ. >FEASIBILITY_MAX_SIGMA → skip.
+
+    Returns (ok: bool, ratio: float, detail: str).
+    """
+    if not delta or delta <= 0 or not ask or ask <= 0:
+        return True, 0.0, "insufficient data — not gated"
+    now = _et_now()
+    close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    hours_left = max((close - now).total_seconds() / 3600.0, 0.15)
+    req_move = ask / abs(delta)                       # points of SPY to double
+    t_years = hours_left / (6.5 * 252.0)
+    exp_move = spot * (max(vix, 1.0) / 100.0) * (t_years ** 0.5)   # 1σ, points
+    if exp_move <= 0:
+        return True, 0.0, "no vol estimate — not gated"
+    ratio = req_move / exp_move
+    ok = ratio <= FEASIBILITY_MAX_SIGMA
+    detail = (f"+100% needs SPY {'up' if direction=='call' else 'down'} "
+              f"~{req_move:.2f}pt ({ratio:.2f}σ) vs ~{exp_move:.2f}pt expected in "
+              f"{hours_left:.1f}h (VIX {vix:.1f})")
+    return ok, ratio, detail
+
+
 def find_entry_contract(pool, target, max_spend, max_contracts):
     """
     Find best contract near target strike within budget.
@@ -970,6 +1004,19 @@ def main():
                    "rip_fade": "RIP-FADE (call-wall fade)",
                    "gex_signal": "GEX signal"}.get(setup, setup)
 
+    # ── Feasibility gate: do the numbers make sense? Only take the trade if the
+    # +100% target is realistically reachable in the time left. ──
+    feasible, feas_ratio, feas_detail = target_feasibility(
+        spot, ask, delta, vix, target_strike=target, direction=direction)
+    log.info(f"FEASIBILITY: {feas_detail}")
+    if not feasible:
+        msg = (f"SKIP — target not realistic: {feas_detail}. "
+               f"Need {feas_ratio:.2f}σ (max {FEASIBILITY_MAX_SIGMA}σ).")
+        log.warning(msg)
+        write_gex_state({"last_action": f"NO TRADE — {feas_detail} "
+                                        f"({feas_ratio:.2f}σ > {FEASIBILITY_MAX_SIGMA}σ target). Sat out."})
+        sys.exit(0)
+
     place_order(contract, expiration, direction, qty)
     write_gex_state({
         "last_action": f"{'[DRY RUN] ' if DRY_RUN else ''}ORDER PLACED [{setup_label}]: BUY {qty}x SPY {float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f}",
@@ -1020,6 +1067,7 @@ def main():
     print(f"  Total cost: ${total:.2f}")
     print(f"  Stop loss:  ${total*0.5:.2f}  (-50%)")
     print(f"  Trail stop: activates at ${total*2:.2f}  (+100%), trails 25% from peak")
+    print(f"  Feasible:   {feas_detail}  [{feas_ratio:.2f}σ / {FEASIBILITY_MAX_SIGMA}σ max]")
     print(f"  GEX Conf:   {confidence*100:.0f}%")
     print(f"  Status:     {'DRY RUN' if DRY_RUN else 'ORDER PLACED'}")
     print("="*60)
