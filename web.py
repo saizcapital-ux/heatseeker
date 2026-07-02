@@ -263,8 +263,6 @@ def _refresh_cboe_gex():
                 log.info(f"Massive real-time GEX: king=${patch['king_strike']} flip=${patch['gamma_flip']} strikes={len(patch['strike_ladder'])}")
             else:
                 log.warning(f"Massive GEX unavailable — falling back to CBOE: {reason}")
-        else:
-            log.info("MASSIVE_API_KEY not set — using CBOE 15-min delayed GEX")
     except Exception as e:
         log.warning(f"Massive GEX errored, falling back to CBOE: {e}")
         patch = None
@@ -925,10 +923,10 @@ def _health_checks():
                    "detail": ("REAL MONEY — agentic account only" if not dry
                               else "DRY-RUN (paper) — set DRY_RUN=false for live")})
 
-    massive_on = bool(os.getenv("MASSIVE_API_KEY"))
+    import scripts.massive as _massive
     checks.append({"name": "Options data feed", "ok": True,
-                   "detail": ("Massive real-time (MASSIVE_API_KEY set)" if massive_on
-                              else "CBOE 15-min delayed — set MASSIVE_API_KEY for real-time")})
+                   "detail": ("Massive real-time (enabled)" if _massive.enabled()
+                              else "Robinhood live + CBOE 15-min delayed")})
 
     tw_on   = os.getenv("TWITTER_ENABLED", "false").lower() == "true"
     tw_keys = all(os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_SECRET",

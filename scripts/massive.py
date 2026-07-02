@@ -29,7 +29,10 @@ def api_key():
     return os.getenv("MASSIVE_API_KEY", "").strip()
 
 def enabled():
-    return bool(api_key())
+    # Opt-in: requires BOTH a key AND MASSIVE_ENABLED=true. Default off so an
+    # un-entitled/free key never gets tried (avoids 403 log spam). Flip
+    # MASSIVE_ENABLED=true once the plan includes options-chain snapshots.
+    return bool(api_key()) and os.getenv("MASSIVE_ENABLED", "false").lower() in ("1", "true", "yes")
 
 
 def _get_url(url, timeout=12):
