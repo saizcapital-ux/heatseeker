@@ -717,9 +717,11 @@ function renderMainChart(d){
 
 // Shared right-margin tag gutter: colored price pills, collision-avoided, with
 // off-screen levels clamped to the edge (↑/↓) and stacked. Used by all 3 charts.
+var IS_MOBILE = function(){ return (window.innerWidth||9999) <= 820; };
+var TAGFONT = 9;
 function gexTag(y,c,txt,solidBg){
   return {xref:'paper',yref:'y',x:1.006,xanchor:'left',y:y,yanchor:'middle',text:txt,showarrow:false,align:'left',
-    font:{size:9,color:solidBg?'#0a0c10':c,family:'monospace'},bgcolor:solidBg||'rgba(10,12,16,.80)',bordercolor:c,borderwidth:1,borderpad:3};
+    font:{size:TAGFONT,color:solidBg?'#0a0c10':c,family:'monospace'},bgcolor:solidBg||'rgba(10,12,16,.80)',bordercolor:c,borderwidth:1,borderpad:IS_MOBILE()?2:3};
 }
 function placeTags(annos,items,yLo,yHi){
   var range=(yHi-yLo)||1, minGap=range*0.052;
@@ -746,9 +748,11 @@ function renderCloud(d){
   var bandRef = spot;
   if(!bandRef && gex.length){ var ss=gex.map(function(s){return s.strike;}).sort(function(a,b){return a-b;}); bandRef=ss[Math.floor(ss.length/2)]; }
 
-  // When we have candles + a GEX ladder, reserve the right ~26% for a GEX-by-strike
-  // histogram; the price panel (candles, wash, levels) lives in the left xR.
-  var hasHisto = candles.length && gex.length;
+  // Mobile: drop the side histogram (candles use full width), smaller tags/gutter.
+  var mob = IS_MOBILE(); TAGFONT = mob ? 8 : 9;
+  // When we have candles + a GEX ladder (desktop only), reserve the right ~26% for
+  // a GEX-by-strike histogram; the price panel lives in the left xR.
+  var hasHisto = candles.length && gex.length && !mob;
   var xR = hasHisto ? 0.72 : 1.0;
 
   var shapes=[], annos=[];
@@ -770,19 +774,21 @@ function renderCloud(d){
       shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:xR,y0:s.strike-half,y1:s.strike+half,fillcolor:(net>0?'rgba(0,208,132,':'rgba(255,51,85,')+op+')',line:{width:0},layer:'below'});});
   }
 
-  // ── Key levels ──
+  // ── Key levels ── (mobile shows short labels + drops SPX/max-pain to fit the gutter)
   var levels=[];
   function addLvl(v,c,l,w,dash){ if(v) levels.push({y:+v,c:c,l:l,w:w,dash:dash}); }
-  addLvl(d.king_strike,C.orange,'KING ♛',2,'solid');
-  addLvl(d.gamma_flip,C.yellow,'γ FLIP',1.5,'solid');
-  addLvl(d.call_wall,C.green,'CALL WALL',1,'dot');
-  addLvl(d.put_wall,C.red,'PUT WALL',1,'dot');
-  addLvl(d.max_pain,C.blue,'MAX PAIN',1,'dash');
-  addLvl(d.spx_flip_spy,C.purple,'SPX FLIP ◆',1.5,'dashdot');
-  addLvl(d.spx_king_spy,C.purple,'SPX KING ◆',1.5,'dashdot');
-  addLvl(d.spx_call_wall_spy,C.purple,'SPX C·WALL ◆',1,'dot');
-  addLvl(d.spx_put_wall_spy,C.purple,'SPX P·WALL ◆',1,'dot');
-  addLvl(d.spx_max_pain_spy,C.purple,'SPX PAIN ◆',1,'dot');
+  addLvl(d.king_strike,C.orange, mob?'KING':'KING ♛',2,'solid');
+  addLvl(d.gamma_flip, C.yellow, mob?'FLIP':'γ FLIP',1.5,'solid');
+  addLvl(d.call_wall,  C.green,  mob?'C.WALL':'CALL WALL',1,'dot');
+  addLvl(d.put_wall,   C.red,    mob?'P.WALL':'PUT WALL',1,'dot');
+  if(!mob){
+    addLvl(d.max_pain,C.blue,'MAX PAIN',1,'dash');
+    addLvl(d.spx_flip_spy,C.purple,'SPX FLIP ◆',1.5,'dashdot');
+    addLvl(d.spx_king_spy,C.purple,'SPX KING ◆',1.5,'dashdot');
+    addLvl(d.spx_call_wall_spy,C.purple,'SPX C·WALL ◆',1,'dot');
+    addLvl(d.spx_put_wall_spy,C.purple,'SPX P·WALL ◆',1,'dot');
+    addLvl(d.spx_max_pain_spy,C.purple,'SPX PAIN ◆',1,'dot');
+  }
 
   // Draw level lines + the shared collision-avoided right-gutter tags.
   function drawLevels(yLo,yHi){
@@ -795,15 +801,14 @@ function renderCloud(d){
     levels.forEach(function(L){ if(L.y>=yLo&&L.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:L.y,y1:L.y,line:{color:L.c,width:L.w,dash:L.dash}}); });
     if(spot&&spot>=yLo&&spot<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:spot,y1:spot,line:{color:'#fff',width:1.5}});
     var items = levels.map(function(L){return {y:L.y,c:L.c,text:L.l+' '+Math.round(L.y)};});
-    // Trade-lifecycle levels for the open position (entry / target / trail / stop / break-even)
+    // Trade-lifecycle levels for the open position (mobile: short labels, key 3 only)
     if(d.trade_levels){
       var tl=d.trade_levels;
-      [{y:tl.entry, c:'#fff',   t:'▶ ENTRY',  w:1.5},
-       {y:tl.target,c:C.green,  t:'★ TARGET', w:1},
-       {y:tl.trail, c:C.yellow, t:'⚑ TRAIL',  w:1},
-       {y:tl.stop,  c:C.red,    t:'✖ STOP',   w:1.5},
-       {y:tl.be,    c:C.blue,   t:'B/E',      w:1}
-      ].forEach(function(x){ if(!x.y) return;
+      (mob
+        ? [{y:tl.entry,c:'#fff',t:'ENT',w:1.5},{y:tl.target,c:C.green,t:'TGT',w:1},{y:tl.stop,c:C.red,t:'STP',w:1.5}]
+        : [{y:tl.entry, c:'#fff',t:'▶ ENTRY',w:1.5},{y:tl.target,c:C.green,t:'★ TARGET',w:1},
+           {y:tl.trail, c:C.yellow,t:'⚑ TRAIL',w:1},{y:tl.stop,c:C.red,t:'✖ STOP',w:1.5},{y:tl.be,c:C.blue,t:'B/E',w:1}]
+      ).forEach(function(x){ if(!x.y) return;
         if(x.y>=yLo&&x.y<=yHi) shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:xR,y0:x.y,y1:x.y,line:{color:x.c,width:x.w,dash:'longdash'}});
         items.push({y:x.y,c:x.c,text:x.t+' '+x.y}); });
     }
@@ -814,21 +819,21 @@ function renderCloud(d){
     if(flip&&spot){
       var posG=spot>=flip;
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.975,xanchor:'left',yanchor:'top',
-        text:(posG?'▲ POSITIVE γ — pinning / mean-revert':'▼ NEGATIVE γ — trending / volatile'),
-        showarrow:false,font:{size:10,color:posG?C.green:C.red,family:'monospace'},
-        bgcolor:'rgba(10,12,16,.75)',bordercolor:posG?C.green:C.red,borderwidth:1,borderpad:4});
+        text:(posG?(mob?'▲ +γ PIN':'▲ POSITIVE γ — pinning / mean-revert'):(mob?'▼ −γ TREND':'▼ NEGATIVE γ — trending / volatile')),
+        showarrow:false,font:{size:mob?8:10,color:posG?C.green:C.red,family:'monospace'},
+        bgcolor:'rgba(10,12,16,.75)',bordercolor:posG?C.green:C.red,borderwidth:1,borderpad:mob?2:4});
       var ctx,cc;
-      if(spot<flip){ ctx='⚡ Below γ-flip — trend zone, avoid calls'; cc=C.red; }
-      else if(cw&&spot>=cw-1){ ctx='⚠ At call wall — rally capped, fade / take profit'; cc=C.yellow; }
-      else if(pw&&spot<=pw+1){ ctx='🎯 At put wall + positive γ — DIP-BUY zone'; cc=C.green; }
-      else { ctx='😌 In range — pinning, fade the edges'; cc=C.blue; }
+      if(spot<flip){ ctx=mob?'⚡ Below flip — no calls':'⚡ Below γ-flip — trend zone, avoid calls'; cc=C.red; }
+      else if(cw&&spot>=cw-1){ ctx=mob?'⚠ Call wall — fade':'⚠ At call wall — rally capped, fade / take profit'; cc=C.yellow; }
+      else if(pw&&spot<=pw+1){ ctx=mob?'🎯 Put wall — dip-buy':'🎯 At put wall + positive γ — DIP-BUY zone'; cc=C.green; }
+      else { ctx=mob?'😌 In range — fade edges':'😌 In range — pinning, fade the edges'; cc=C.blue; }
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
-        text:ctx,showarrow:false,font:{size:11,color:cc,family:'monospace'},
-        bgcolor:'rgba(10,12,16,.75)',bordercolor:cc,borderwidth:1,borderpad:4});
+        text:ctx,showarrow:false,font:{size:mob?9:11,color:cc,family:'monospace'},
+        bgcolor:'rgba(10,12,16,.75)',bordercolor:cc,borderwidth:1,borderpad:mob?2:4});
     }
   }
 
-  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:{l:56,r:104,t:14,b:34},
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},margin:mob?{l:44,r:66,t:12,b:26}:{l:56,r:104,t:14,b:34},
     yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',zeroline:false},shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
   var traces;
 
