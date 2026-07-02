@@ -712,11 +712,14 @@ def api_state():
         try:
             if es and ep and ed and strike:
                 es, ep, strike = float(es), float(ep), float(strike)
-                dlt = abs(float(ed)) or 0.4
+                # Floor delta (low-delta OTM options otherwise translate to absurd
+                # moves) and cap the SPY move so a single level can't fly off-chart.
+                dlt = max(abs(float(ed)) or 0.4, 0.15)
+                _mvcap = max(3.0, es * 0.015)   # ≤ ~1.5% of spot per level
                 is_call = str(ot).lower().startswith("c")
                 be = strike + ep if is_call else strike - ep
-                def _mv(pct):  # SPY move for a premium % change, via delta
-                    return pct * ep / dlt
+                def _mv(pct):  # SPY move for a premium % change, via delta (capped)
+                    return min(pct * ep / dlt, _mvcap)
                 if is_call:
                     stop, trail, tp = es - _mv(0.50), es + _mv(0.30), es + _mv(1.00)
                 else:
