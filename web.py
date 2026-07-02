@@ -124,9 +124,12 @@ def _cboe_analytics(payload):
         oi = float(o.get("open_interest") or 0)
         gm = float(o.get("gamma") or 0)
         vol = float(o.get("volume") or 0)
+        dl = float(o.get("delta") or 0)
+        iv = float(o.get("iv") or 0)
         bucket = calls if typ == "C" else puts
-        b = bucket.setdefault(strike, {"oi": 0.0, "gamma": 0.0, "vol": 0.0})
+        b = bucket.setdefault(strike, {"oi": 0.0, "gamma": 0.0, "vol": 0.0, "delta": 0.0, "iv": 0.0})
         b["oi"] += oi; b["gamma"] = gm or b["gamma"]; b["vol"] += vol
+        b["delta"] = dl or b["delta"]; b["iv"] = iv or b["iv"]
 
     strikes = sorted(set(calls) | set(puts))
     if not strikes:
@@ -184,6 +187,40 @@ def _cboe_analytics(payload):
         if best is None or pay < best:
             best, max_pain = pay, k
 
+    # ── Net dealer greeks (DEX + book vega) via Black-Scholes ──
+    # DEX uses the same dealer convention as GEX (long calls / short puts):
+    #   DEX = Σ(callΔ·callOI) − Σ(putΔ·putOI). Vega is direction-agnostic from OI
+    #   alone (needs flow to sign), so we expose book-vega MAGNITUDE only.
+    import math
+    try:
+        exp_dt = datetime.strptime(exp, "%Y-%m-%d").replace(hour=16, tzinfo=ET)
+        T = max((exp_dt - datetime.now(ET)).total_seconds() / (365.0 * 86400), 1.0 / (365 * 24 * 6))
+    except Exception:
+        T = 1.0 / 365
+    _r, _q = 0.045, 0.013
+    def _bs_dv(S, K, sig, is_call):
+        if sig <= 0 or S <= 0 or K <= 0 or T <= 0:
+            return 0.0, 0.0
+        sq = sig * math.sqrt(T)
+        d1 = (math.log(S / K) + (_r - _q + sig * sig / 2) * T) / sq
+        pdf = math.exp(-d1 * d1 / 2) / math.sqrt(2 * math.pi)
+        Nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+        delta = math.exp(-_q * T) * (Nd1 if is_call else Nd1 - 1)
+        vega = S * math.exp(-_q * T) * pdf * math.sqrt(T) / 100.0   # per 1% vol
+        return delta, vega
+    dex_shares, book_vega = 0.0, 0.0
+    for s in strikes:
+        c = calls.get(s, {}); p = puts.get(s, {})
+        c_oi, p_oi = c.get("oi", 0), p.get("oi", 0)
+        cd = c.get("delta") or _bs_dv(spot, s, c.get("iv", 0), True)[0]
+        pd = p.get("delta") or _bs_dv(spot, s, p.get("iv", 0), False)[0]
+        _, cv = _bs_dv(spot, s, c.get("iv", 0), True)
+        _, pv = _bs_dv(spot, s, p.get("iv", 0), False)
+        dex_shares += cd * c_oi - pd * p_oi          # DEX convention
+        book_vega  += cv * c_oi + pv * p_oi
+    net_delta_m = round(dex_shares * spot * 100 / 1e6, 1)   # $M of dealer delta
+    book_vega_m = round(book_vega * 100 / 1e6, 2)           # $M vega in the book (magnitude)
+
     total_abs = sum(abs(r["net_gex_m"]) for r in ladder) or 1
     concentration = abs(king_gex_m) / total_abs
     direction = "call" if king_gex_m >= 0 else "put"
@@ -192,6 +229,8 @@ def _cboe_analytics(payload):
         "spot":          round(spot, 2),
         "strike_ladder": ladder,
         "net_gex_total": round(net_total, 2),
+        "net_delta_m":   net_delta_m,
+        "book_vega_m":   book_vega_m,
         "king_strike":   king_strike,
         "king_gex_m":    round(king_gex_m, 2),
         "gamma_flip":    gamma_flip,
@@ -759,6 +798,8 @@ def api_state():
         "put_vol_total":  g.get("put_vol_total"),
         "top_nodes":      g.get("top_nodes"),
         "net_gex_total":  net_gex_total,
+        "net_delta_m":    g.get("net_delta_m"),
+        "book_vega_m":    g.get("book_vega_m"),
         "gex_source":     g.get("gex_source"),
         "gex_expiry":     g.get("gex_expiry"),
         "spx_spot":       g.get("spx_spot"),

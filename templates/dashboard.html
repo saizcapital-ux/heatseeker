@@ -211,6 +211,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 #dealer-range { margin-left:auto; flex-shrink:0; font-size:10px; color:var(--muted); }
 #dealer-range b { color:var(--blue); }
 .sb-v.pin{color:var(--green);} .sb-v.trend{color:var(--red);} .sb-v.light{color:var(--yellow);} .sb-v.nearflip{color:var(--orange);}
+.sb-greeks { gap:4px; }
+.grk { font-size:11px; font-weight:700; padding:1px 5px; border-radius:3px; border:1px solid var(--border); cursor:help; }
 </style>
 </head>
 <body>
@@ -265,7 +267,13 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div class="sb-div"></div>
   <div class="sb-item"><span class="sb-k">Regime</span><span class="sb-v" id="sb-regime">--</span></div>
   <div class="sb-item"><span class="sb-k">Term</span><span class="sb-v" id="sb-ts">--</span></div>
-  <div class="sb-item"><span class="sb-k">Vanna</span><span class="sb-v" id="sb-vanna">--</span></div>
+  <div class="sb-item sb-greeks"><span class="sb-k">Greeks</span>
+    <span class="grk" id="grk-gamma" title="Gamma">Γ</span>
+    <span class="grk" id="grk-delta" title="Delta">Δ</span>
+    <span class="grk" id="grk-vanna" title="Vanna">V</span>
+    <span class="grk" id="grk-charm" title="Charm">Θc</span>
+    <span class="grk" id="grk-vega"  title="Vega">κ</span>
+  </div>
   <div class="sb-item"><span class="sb-k">IVR</span><span class="sb-v" id="sb-ivr">--</span></div>
   <div class="sb-item"><span class="sb-k">VRP</span><span class="sb-v" id="sb-vrp">--</span></div>
   <span style="margin-left:auto;font-size:9px;color:var(--muted)">walls &amp; levels → on chart</span>
@@ -275,7 +283,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 <div id="flow-strip">
   <span class="fk">🔎 Flow Reading</span>
   <span class="fv" id="flow-reading">Waiting for GEX scan…</span>
-  <span id="dealer-range">Dealer range —</span>
+  <span id="lowvol-tag" style="display:none;font-size:10px;font-weight:700;margin-left:auto"></span>
+  <span id="dealer-range" style="margin-left:14px">Dealer range —</span>
 </div>
 
 <div id="body">
@@ -475,12 +484,47 @@ function renderSignal(d){
   var reg=regimeState(d);
   var rEl=document.getElementById('sb-regime'); rEl.textContent=reg.code; rEl.className='sb-v '+reg.cls;
   var ts=d.ts_label||'', tse=document.getElementById('sb-ts'); tse.textContent=ts.replace(/_/g,' ')||'--'; tse.className='sb-v '+(ts||'');
-  document.getElementById('sb-vanna').textContent=d.vanna_label?d.vanna_label.replace(/_/g,' '):'--';
   var ivrEl=document.getElementById('sb-ivr');
   if(d.ivr!=null){ var ivrPct=Math.round(d.ivr*(d.ivr<=1?100:1)); ivrEl.textContent=ivrPct+'%'; ivrEl.style.color=ivrPct>=50?C.red:ivrPct<=30?C.green:C.text; }
   else ivrEl.textContent='--';
   var vrpEl=document.getElementById('sb-vrp');
   vrpEl.textContent=d.vrp_label?d.vrp_label.replace(/_/g,' '):'--';
+}
+
+// ── Feature 1: 5-Greek environment bar ──
+function setGrk(id,txt,color,tip){ var e=document.getElementById(id); if(!e)return; e.textContent=txt; e.style.color=color; e.style.borderColor=color==='#4a5470'?'var(--border)':color+'55'; e.title=tip; }
+function renderGreeks(d){
+  var dir=(d.direction||'').toLowerCase(), bull=/^(c|long|bull)/.test(dir), bear=/^(p|short|bear)/.test(dir);
+  // Γ GAMMA — dealer long/short gamma (flip-based, consistent with the regime chip)
+  var reg=regimeState(d), glong=/\+GEX/.test(reg.code), gshort=/-GEX/.test(reg.code), gflip=reg.code==='NEAR FLIP';
+  setGrk('grk-gamma', reg.code==='--'?'Γ':('Γ'+(glong?'+':gshort?'−':'~')), reg.code==='--'?C.muted:(glong?C.green:gshort?C.red:C.orange),
+    reg.code==='--'?'Gamma — awaiting scan':gflip
+      ?'Γ NEAR FLIP — dealer near gamma-neutral. Both stabilizing & destabilizing forces active. Highest whipsaw risk.'
+      :glong
+      ?'Γ LONG (dealer long gamma). Dealer STABILIZING — buys dips, sells rips. Fade moves, prefer spreads, don’t chase breakouts.'
+      :'Γ SHORT (dealer short gamma). Dealer DESTABILIZING — amplifies moves. Trust breakouts, favor directional.');
+  // Δ DELTA — net dealer delta (DEX)
+  var dl=d.net_delta_m, dSup = dl==null?0:(bull?(dl<0?1:-1):bear?(dl>0?1:-1):0);
+  setGrk('grk-delta', dl==null?'Δ':('Δ'+(dl>=0?'+':'−')), dl==null?C.muted:(dSup>0?C.green:dSup<0?C.red:C.text),
+    dl==null?'Delta — awaiting scan':('Net dealer delta '+(dl>=0?'LONG':'SHORT')+' ('+dl+' $M DEX). '+(dl>=0
+      ?'Dealers long delta → they SELL into rallies (resistance) and buy dips.'
+      :'Dealers short delta → they BUY into rallies and sell dips → directional pressure.')));
+  // V VANNA — IV-driven mechanical flow
+  var v=(d.vanna_label||'').toLowerCase(), vbid=/bid/.test(v), voff=/sell|offer|headwind/.test(v);
+  var vSup = vbid?(bull?1:bear?-1:0):voff?(bull?-1:bear?1:0):0;
+  setGrk('grk-vanna', vbid?'V▲':voff?'V▼':'V·', !v?C.muted:(vSup>0?C.green:vSup<0?C.red:C.text),
+    !v?'Vanna — neutral':(vbid
+      ?'Vanna BID (IV rising + spot rising). Rising IV expands dealer delta → forced buying into rallies. Momentum amplified — mechanical, not just retail FOMO.'
+      :'Vanna OFFER (IV falling). Falling IV shrinks delta → dealer selling into strength. Fades rallies.'));
+  // Θc CHARM — time-driven delta-to-ATM (0DTE)
+  var et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'})), min=et.getHours()*60+et.getMinutes(), late=min>=780&&min<=960;
+  setGrk('grk-charm', late?'Θc⚑':'Θc·', late?C.yellow:C.muted,
+    late?'Charm PIN active (into close). Time decay pulls delta toward ATM — near-expiry strikes act as magnets. Fade breakouts into the final hours.'
+        :'Charm — light. Time decay not yet pulling delta hard toward ATM.');
+  // κ VEGA — magnitude only; direction needs FLOW data
+  var bv=d.book_vega_m;
+  setGrk('grk-vega','κ?', C.muted,
+    'Net dealer Vega DIRECTION needs flow data (who bought/sold vol) — not derivable from OI alone. Book vega ≈ '+(bv!=null?bv:'—')+' $M. Customer vol BUYS → dealer short vega → VIX bid; watch the Flow tab for 5M+ Vega prints.');
 }
 
 // ── Regime intelligence (VolSignals 4 sub-states) ──
@@ -513,8 +557,14 @@ function renderFlowReading(d){
   document.getElementById('flow-reading').textContent=msg;
   var dr=document.getElementById('dealer-range');
   if(d.put_wall&&d.call_wall){ var mid=d.max_pain||d.king_strike||Math.round((d.put_wall+d.call_wall)/2);
-    dr.innerHTML='Dealer range <b>$'+d.put_wall+'–$'+d.call_wall+'</b> · mid $'+mid; }
+    dr.innerHTML='Dealer range <b>$'+d.put_wall+'–$'+d.call_wall+'</b> · mid $'+mid;
+    dr.title='VS3D balance framework: use the range endpoints ($'+d.put_wall+' / $'+d.call_wall+') as entries, the midpoint ($'+mid+') as the exit target. In an active market, balance levels act more like TESTS than magnets — accept a test = reverse test/ranges until balance.'; }
   else dr.textContent='Dealer range —';
+  // F6: LOW VOL REGIME reframe (ideal dealer-flow environment)
+  var lv=document.getElementById('lowvol-tag');
+  if(lv){ if(d.vix && d.vix < 15){ lv.style.display='inline'; lv.textContent='✅ LOW VOL REGIME'; lv.style.color=C.green;
+      lv.title='Low VIX conditions — ideal for the dealer-hedging framework: low intraday volume · low front-month IV · localized greeks · bigger relative dealer positions. Summer/holiday markets = highest-probability dealer-flow environment.'; }
+    else lv.style.display='none'; }
 }
 
 /* Bot brain */
@@ -971,7 +1021,7 @@ function poll(){
   ]).then(function(res){
     var d=res[0]; lastState=d; lastHistory=(res[1]&&res[1].history)||[];
     renderHeader(d); renderBot(d); renderSignal(d); renderBrain(d);
-    renderFlowReading(d);
+    renderGreeks(d); renderFlowReading(d);
     computeEvents(lastHistory,d);
     renderPositions(d); renderFlow(d); renderStats(d); renderJournal(d);
     renderMainChart(d);
