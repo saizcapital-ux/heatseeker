@@ -99,8 +99,9 @@ def run_entry():
 def run_exit(force=False):
     now = datetime.now(ET)
     t   = now.hour * 60 + now.minute
-    # Exit checks: 10:00 AM – 3:30 PM ET, weekdays only
-    if now.weekday() >= 5 or t < 600 or t > 930:
+    # Exit checks: 10:00 AM – 3:52 PM ET, weekdays only (extended past 3:30 so the
+    # trailing stop manages the power-hour momentum trade into the bell buffer).
+    if now.weekday() >= 5 or t < 600 or t > 952:
         return
     log.info("=" * 60)
     log.info(f"EXIT CHECK at {now.strftime('%H:%M')} ET  FORCE={force}")
@@ -117,12 +118,33 @@ def run_exit(force=False):
     except Exception as e:
         log.error(f"Exit error: {e}", exc_info=True)
 
+def run_power_hour():
+    """Late-day gamma-hedging momentum entry at 3:30 ET (JFE 2021). Self-gates on
+    short-gamma + a real day-move; exits are handled by the exit monitor and the
+    bell-buffer force close."""
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return
+    log.info("=" * 60)
+    log.info(f"POWER-HOUR ENTRY at {now.strftime('%H:%M')} ET")
+    log.info("=" * 60)
+    os.environ["DRY_RUN"] = "false"
+    try:
+        import importlib, scripts.spy_trader as trader
+        importlib.reload(trader)
+        trader.power_hour_entry()
+    except SystemExit:
+        pass
+        _push_state_to_web()
+    except Exception as e:
+        log.error(f"Power-hour error: {e}", exc_info=True)
+
 def force_close():
     now = datetime.now(ET)
     if now.weekday() >= 5:
         return
     log.info("=" * 60)
-    log.info("3:30 PM FORCE CLOSE")
+    log.info("3:52 PM FORCE CLOSE (bell buffer)")
     log.info("=" * 60)
     os.environ["DRY_RUN"] = "false"
     os.environ["FORCE_CLOSE"] = "true"
@@ -189,7 +211,10 @@ def main():
     scheduler.add_job(lambda: run_exit(False), IntervalTrigger(minutes=2), id="exit_scan", name="Exit scan")
 
     # Force close: 3:30 PM sharp every weekday
-    scheduler.add_job(force_close, CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="force_close", name="3:30 PM force close")
+    # Power-hour momentum entry — one shot at 3:30 ET (JFE 2021, short-gamma only)
+    scheduler.add_job(run_power_hour, CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=ET), id="power_hour", name="3:30 PM power-hour entry")
+    # Force close moved to 3:52 (bell buffer) so the power-hour trade can run
+    scheduler.add_job(force_close, CronTrigger(day_of_week="mon-fri", hour=15, minute=52, timezone=ET), id="force_close", name="3:52 PM force close")
 
     # Live GEX analysis every 15 min during market hours — keeps dashboard populated
     scheduler.add_job(run_gex_analysis, IntervalTrigger(minutes=3), id="gex_scan", name="Live GEX scan")

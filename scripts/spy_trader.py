@@ -35,6 +35,11 @@ FEASIBILITY_MAX_SIGMA = 1.25  # hard pre-filter: skip if hitting +100% needs a
 # Only take a trade when the estimated probability of TOUCHING the target clears
 # this, with margin. Raise it to trade less/pickier, lower it to trade more.
 CONVICTION_MIN    = 0.38
+# Power-hour momentum (Baltussen/Da/Lammers/Martens, JFE 2021): last-30-min
+# return follows the day's move when dealers are net short gamma. Riskier late
+# play → size smaller; require a real day-move to have momentum to ride.
+POWER_HOUR_SIZE_FRAC = 0.50   # fraction of normal max_spend for the 3:30 entry
+POWER_HOUR_MIN_MOVE  = 0.0025 # day must be at least ±0.25% to count as momentum
 DIP_BUY_MAX_PCT = 0.010   # dip-buy calls only within 1% below prev close (else it's a real breakdown)
 # Rip-fade (mirror of dip-buy): fade the CALL WALL with puts in a pinning regime
 RIP_FADE_NEAR      = 0.50  # spot within $ below the call wall counts as "at" it
@@ -788,6 +793,112 @@ def place_order(contract, expiration, opt_type, qty):
     )
     log.info(f"Order: {json.dumps(order, indent=2)}")
     return order
+
+def power_hour_entry():
+    """Late-day gamma-hedging momentum entry (Baltussen, Da, Lammers & Martens,
+    JFE 2021: 'Hedging Demand and Market Intraday Momentum').
+
+    The last-30-min return is significantly predicted by the day's cumulative
+    return, and the effect is MECHANICALLY driven by dealer gamma hedging —
+    strongest when dealers are net SHORT gamma (below the flip / negative GEX):
+    they buy strength and sell weakness to stay neutral, trending price into the
+    close. We only fire when that condition holds, trade the sign of the day's
+    move, run the same feasibility + conviction gates, and rely on the exit
+    monitor + the bell-buffer force-close to flatten. Strictly intraday — the
+    effect reverts over subsequent days, so the position never survives the day.
+    """
+    login()
+    symbol, today_str = "SPY", date.today().strftime("%Y-%m-%d")
+    expiration = today_str
+    now = _et_now(); t = now.hour * 60 + now.minute
+    log.info("=" * 60); log.info(f"POWER-HOUR CHECK at {now.strftime('%H:%M')} ET"); log.info("=" * 60)
+
+    if today_str in NYSE_HOLIDAYS_2026 or today_str in SKIP_DATES:
+        log.warning("POWER-HOUR BLOCKED: holiday / skip date"); sys.exit(0)
+    if not DRY_RUN and not (930 <= t <= 958):      # 3:30–3:58 PM ET only
+        log.warning(f"POWER-HOUR BLOCKED: {now.strftime('%H:%M')} outside 15:30–15:58 window"); sys.exit(0)
+    if has_open_position():
+        log.info("POWER-HOUR BLOCKED: already holding a position"); sys.exit(0)
+
+    vix = get_vix()
+    if vix < VIX_MIN or vix > VIX_MAX:
+        log.warning(f"POWER-HOUR BLOCKED: VIX {vix:.2f} outside {VIX_MIN}-{VIX_MAX}"); sys.exit(0)
+
+    balance = get_account_balance()
+    max_contracts, max_spend = get_smart_size(balance)
+    if max_contracts == 0:
+        log.warning("POWER-HOUR BLOCKED: sizer says sit out"); sys.exit(0)
+    max_spend *= POWER_HOUR_SIZE_FRAC          # smaller — this is a riskier late play
+    max_spend = max(5.0, min(max_spend, balance * 0.90))
+
+    spot, prev_close = get_spot_and_prev_close(symbol)
+    day_ret = spot - prev_close
+    day_ret_pct = day_ret / prev_close if prev_close else 0
+    if abs(day_ret_pct) < POWER_HOUR_MIN_MOVE:  # no meaningful trend to ride
+        log.info(f"POWER-HOUR SKIP: day move {day_ret_pct*100:+.2f}% < {POWER_HOUR_MIN_MOVE*100:.2f}% — no momentum")
+        write_gex_state({"last_action": f"NO POWER-HOUR — day flat ({day_ret_pct*100:+.2f}%), no momentum edge."})
+        sys.exit(0)
+
+    calls, puts = get_atm_strikes(symbol, expiration, spot)
+    if not calls and not puts:
+        log.error("POWER-HOUR: no options found"); sys.exit(1)
+    fetch_greeks(calls); fetch_greeks(puts)
+    nodes = compute_gex_nodes(calls, puts, spot)
+    king_strike, king_gex = find_king(nodes)
+    gex_features = extract_gex_features(calls, puts, spot, nodes, king_strike, king_gex)
+    gamma_flip = gex_features.get("gamma_flip", king_strike)
+    net_gex_total = sum(g for _, g in nodes)
+
+    # THE gate: the edge exists only when dealers are net SHORT gamma.
+    short_gamma = (net_gex_total < 0) or (spot < gamma_flip)
+    if not short_gamma:
+        log.info(f"POWER-HOUR SKIP: net LONG gamma (netGEX=${net_gex_total/1e6:+.1f}M, "
+                 f"spot ${spot:.2f} ≥ flip ${gamma_flip:.0f}) — pinning, no momentum edge")
+        write_gex_state({"last_action":
+            f"NO POWER-HOUR — net long gamma (pinning), day {day_ret_pct*100:+.2f}%. Momentum edge needs short gamma."})
+        sys.exit(0)
+
+    # Trade the SIGN of the day's move (momentum), near-ATM.
+    direction = "call" if day_ret > 0 else "put"
+    pool = calls if direction == "call" else puts
+    target = int(round(spot)) + (1 if direction == "call" else -1)
+    setup = "power_hour"
+    log.info(f"POWER-HOUR: day {day_ret_pct*100:+.2f}% · net SHORT gamma "
+             f"(netGEX=${net_gex_total/1e6:+.1f}M, flip ${gamma_flip:.0f}) → momentum {direction.upper()} target {target}")
+
+    contract = find_entry_contract(pool, target, max_spend, max_contracts)
+    if not contract:
+        log.warning("POWER-HOUR: no suitable contract within budget. Skipping."); sys.exit(0)
+    qty, ask, delta = contract["_contracts"], contract["ask_price"], contract.get("delta", 0)
+
+    decision = assess_trade(spot, ask, delta, vix, direction, prev_close, gex_features,
+                            vanna_label=None, flow_label=None, gamma_flip=gamma_flip, pin=king_strike)
+    log.info(f"THINK: {decision['verdict']}  P(hit)≈{decision['prob']*100:.0f}%")
+    if not decision["take"]:
+        why = "; ".join(decision["against"]) or decision["feas_detail"]
+        log.warning(f"NO POWER-HOUR TRADE — {decision['verdict']}: {why}")
+        write_gex_state({"last_action": f"NO POWER-HOUR — {decision['verdict']}. P(hit)≈{decision['prob']*100:.0f}%. {why}"})
+        sys.exit(0)
+
+    place_order(contract, expiration, direction, qty)
+    write_gex_state({
+        "last_action": f"{'[DRY RUN] ' if DRY_RUN else ''}POWER-HOUR [momentum]: BUY {qty}x SPY "
+                       f"{float(contract['strike_price'])}{direction[0].upper()} @ ${ask:.2f} "
+                       f"(day {day_ret_pct*100:+.2f}%, short γ). Exit by the bell.",
+        "confidence": decision["prob"], "entry_strike": float(contract["strike_price"]),
+        "entry_price": ask, "entry_qty": qty, "entry_setup": setup,
+        "entry_spot": spot, "entry_delta": abs(delta) or None, "entry_opt_type": direction,
+    })
+    if not DRY_RUN:
+        log_entry(symbol=symbol, opt_type=direction, strike=float(contract["strike_price"]),
+                  expiry=expiration, contracts=qty, entry_price=ask, vix=vix,
+                  king_strike=king_strike, king_gex=king_gex, direction=direction,
+                  balance_before=balance, gex_features=gex_features,
+                  confidence=decision["prob"], setup=setup)
+    print(f"\nPOWER-HOUR ENTRY: {qty}x SPY {float(contract['strike_price'])}{direction[0].upper()} "
+          f"@ ${ask:.2f}  day {day_ret_pct*100:+.2f}%  P(hit)≈{decision['prob']*100:.0f}%")
+    sys.exit(0)
+
 
 def main():
     login()
