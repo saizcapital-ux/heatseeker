@@ -421,7 +421,8 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 <div id="body">
   <div id="col-chart">
     <div class="tabs">
-      <div class="tab active" data-tab="cloud">☁️ GEX Cloud</div>
+      <div class="tab active" data-tab="flow">💰 Money Flow</div>
+      <div class="tab" data-tab="cloud">☁️ GEX Cloud</div>
       <div class="tab" data-tab="migration">📉 Flip Migration</div>
       <div class="tab" data-tab="profile">📊 GEX Profile</div>
       <div class="tab-legend" id="tab-legend"></div>
@@ -490,7 +491,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 
 <script>
 var C = { green:'#00d084', red:'#ff3355', blue:'#4488ff', yellow:'#f5c842', orange:'#ff8c42', purple:'#a875ff', muted:'#4a5470', text:'#c8ccd8', bg:'#0f1219', border:'#1c2030' };
-var lastState = null, lastHistory = [], activeTab = 'cloud', chartMode = null;
+var lastState = null, lastHistory = [], activeTab = 'flow', chartMode = null;
 var PHASE_ICON = { entry:'🎯', manage:'🛡️', force_close:'⏰', monitor:'👁️', premarket:'🌅', closed:'💤' };
 
 function marketSession(){
@@ -933,7 +934,8 @@ function renderJournal(d){
 function setLegend(html){ document.getElementById('tab-legend').innerHTML=html; }
 
 function renderMainChart(d){
-  if(activeTab==='cloud') renderCloud(d);
+  if(activeTab==='flow') renderFlowChart(d);
+  else if(activeTab==='cloud') renderCloud(d);
   else if(activeTab==='migration') renderMigration(d);
   else renderProfile(d);
 }
@@ -1201,6 +1203,88 @@ function renderMigration(d){
     xaxis:{type:'category',gridcolor:'rgba(28,32,48,.55)',color:C.muted,nticks:mob?5:8},yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi]},
     shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified',dragmode:'zoom'};
   plot([cwT,pwT,kingT,flipT,spotT],layout,'migration');
+}
+
+// ── Money Flow: where capital is actually going, as a signal ──────────────
+// Net options volume by strike (call − put contracts traded today), plotted on
+// the price axis: green = money buying calls (bullish flow), red = money buying
+// puts (bearish flow). Signals the dominant flow bias + the strikes money is
+// piling into ("magnets"). Volume is real per-strike data from the feed.
+function renderFlowChart(d){
+  setLegend('<span style="color:'+C.green+'">▉ call buying (bullish $)</span><span style="color:'+C.red+'">▉ put buying (bearish $)</span><span><i class="lg-line" style="border-color:#fff"></i>SPY</span>');
+  var gex=(d.gex_by_strike||[]).slice(), spot=d.spot;
+  var ph=document.getElementById('chart-ph'), ch=document.getElementById('main-chart');
+  var hasVol = gex.some(function(s){return (s.call_vol||0)+(s.put_vol||0)>0;});
+  if(!gex.length || !hasVol){
+    ph.style.display='flex';
+    ph.innerHTML='💰 Money Flow loads on the next 15-min scan<br><span style="font-size:9px">net call vs put volume by strike — where the money is going</span>';
+    ch.style.display='none'; return;
+  }
+  ph.style.display='none'; ch.style.display='block';
+  gex.sort(function(a,b){return a.strike-b.strike;});
+  var mob=IS_MOBILE(); TAGFONT=mob?8:9;
+
+  // focus on the strikes near spot where flow matters (±~2.5%)
+  var win = spot? spot*0.025 : 999;
+  var rows=gex.filter(function(s){return !spot || Math.abs(s.strike-spot)<=win;});
+  if(rows.length<3) rows=gex;
+  var strikes=rows.map(function(s){return s.strike;});
+  var cv=rows.map(function(s){return s.call_vol||0;});
+  var pv=rows.map(function(s){return s.put_vol||0;});
+  var net=rows.map(function(s){return (s.call_vol||0)-(s.put_vol||0);});
+
+  // aggregate bias (whole chain if totals available, else the window)
+  var totC=d.call_vol_total || cv.reduce(function(a,b){return a+b;},0);
+  var totP=d.put_vol_total  || pv.reduce(function(a,b){return a+b;},0);
+  var tot=totC+totP||1, bullPct=Math.round(totC/tot*100);
+  var bullish=bullPct>=50;
+
+  // diverging bars: net call-buying (green, →) vs net put-buying (red, ←)
+  var barT={type:'bar',orientation:'h',y:strikes,x:net,
+    marker:{color:net.map(function(v){return v>=0?'rgba(0,208,132,.75)':'rgba(255,51,85,.75)';})},
+    name:'net flow',hovertemplate:'$%{y} · net %{x:,} ct<br>calls %{customdata[0]:,} · puts %{customdata[1]:,}<extra></extra>',
+    customdata:strikes.map(function(_,i){return [cv[i],pv[i]];})};
+
+  var shapes=[], annos=[], items=[];
+  if(spot)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5,dash:'dash'}});
+  if(d.gamma_flip){shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.gamma_flip,y1:d.gamma_flip,line:{color:C.yellow,width:1,dash:'dot'}}); items.push({y:d.gamma_flip,c:C.yellow,text:(mob?'FLIP ':'γ FLIP ')+Math.round(d.gamma_flip)});}
+  if(d.call_wall)items.push({y:d.call_wall,c:C.green,text:(mob?'CW ':'CALL WALL ')+Math.round(d.call_wall)});
+  if(d.put_wall)items.push({y:d.put_wall,c:C.red,text:(mob?'PW ':'PUT WALL ')+Math.round(d.put_wall)});
+
+  // ── SIGNALS: the strikes money is piling into ──
+  var maxCall=null,maxPut=null;
+  rows.forEach(function(s){
+    if((s.call_vol||0)>0 && (!maxCall||s.call_vol>maxCall.call_vol)) maxCall=s;
+    if((s.put_vol||0)>0 && (!maxPut||s.put_vol>maxPut.put_vol)) maxPut=s;
+  });
+  if(maxCall) items.push({y:maxCall.strike,c:C.green,text:(mob?'📈 ':'📈 CALL MAGNET ')+Math.round(maxCall.strike)});
+  if(maxPut)  items.push({y:maxPut.strike,c:C.red,text:(mob?'📉 ':'📉 PUT MAGNET ')+Math.round(maxPut.strike)});
+
+  var yr=strikes.slice(); var yLo=Math.min.apply(null,yr), yHi=Math.max.apply(null,yr);
+  var pad=((yHi-yLo)*0.05)||1; yLo-=pad; yHi+=pad;
+  placeTags(annos,items,yLo,yHi);
+  if(spot) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
+
+  // headline banner: money-flow bias + rough $ traded
+  var estPrem = spot? Math.max(0.05, 0.4*spot*((d.vix||16)/100)*Math.sqrt(0.5/(6.5*252))) : 0.3;
+  var estDol = (tot*estPrem*100);
+  var dolTxt = estDol>=1e6? ('$'+(estDol/1e6).toFixed(1)+'M') : ('$'+Math.round(estDol/1e3)+'K');
+  annos.push({xref:'paper',yref:'paper',x:0.012,y:0.975,xanchor:'left',yanchor:'top',
+    text:(bullish?'💰 MONEY FLOWING BULLISH ':'💰 MONEY FLOWING BEARISH ')+(bullish?bullPct:(100-bullPct))+'% '+(bullish?'· calls bought':'· puts bought'),
+    showarrow:false,font:{size:mob?9:11,color:bullish?C.green:C.red,family:'monospace'},
+    bgcolor:'rgba(10,12,16,.8)',bordercolor:bullish?C.green:C.red,borderwidth:1,borderpad:mob?3:5});
+  annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
+    text:'calls '+totC.toLocaleString()+' vs puts '+totP.toLocaleString()+' ct · ≈'+dolTxt+' traded',
+    showarrow:false,font:{size:mob?8:9,color:C.muted,family:'monospace'},
+    bgcolor:'rgba(10,12,16,.7)',borderpad:mob?2:3});
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},
+    margin:mob?{l:44,r:74,t:14,b:32}:{l:56,r:120,t:16,b:36},
+    xaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,zeroline:true,zerolinewidth:1.5,zerolinecolor:'rgba(120,131,160,.6)',
+      title:{text:'← puts bought   ·   net contracts   ·   calls bought →',font:{size:8,color:C.muted}}},
+    yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi]},
+    shapes:shapes,annotations:annos,showlegend:false,hovermode:'closest',bargap:0.12};
+  plot([barT],layout,'flow');
 }
 
 function renderProfile(d){
