@@ -214,6 +214,51 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 .sb-greeks { gap:4px; }
 .grk { font-size:11px; font-weight:700; padding:1px 5px; border-radius:3px; border:1px solid var(--border); cursor:help; }
 
+/* ── Manual Trade Cockpit ── */
+#cockpit { display:grid; grid-template-columns:1.15fr 1fr 1fr .85fr; gap:1px; background:var(--border);
+  border-bottom:1px solid var(--border); flex-shrink:0; }
+.cp { background:#0b0e15; padding:9px 12px; min-width:0; }
+.cp-h { font-size:8px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+.cp-h .badge { margin-left:auto; font-size:8px; padding:1px 6px; border-radius:3px; font-weight:700; letter-spacing:.5px; }
+.badge.buy{background:rgba(0,208,132,.16);color:var(--green);} .badge.sell{background:rgba(255,51,85,.16);color:var(--red);}
+.badge.wait{background:rgba(74,84,112,.18);color:var(--muted);}
+/* ticket */
+.tk-row { display:flex; align-items:baseline; gap:8px; }
+.tk-side { font-size:20px; font-weight:800; letter-spacing:.5px; }
+.tk-side.call{color:var(--green);} .tk-side.put{color:var(--red);} .tk-side.wait{color:var(--muted);font-size:16px;}
+.tk-strike { font-size:13px; color:#fff; font-weight:700; }
+.tk-sub { font-size:10px; color:var(--muted); margin-top:1px; }
+.tk-legs { display:flex; gap:12px; margin-top:7px; }
+.tk-leg { font-size:9px; color:var(--muted); }
+.tk-leg b { display:block; font-size:12px; margin-top:1px; }
+.tk-leg.stop b{color:var(--red);} .tk-leg.tgt b{color:var(--green);} .tk-leg.entry b{color:#fff;}
+.cp-conv { margin-top:7px; }
+.cp-bar { height:6px; background:#161a26; border-radius:3px; overflow:hidden; margin-top:3px; }
+.cp-bar-fill { height:100%; border-radius:3px; transition:width .4s; }
+.cp-why { margin-top:6px; font-size:9px; line-height:1.5; }
+.cp-why .for{color:var(--green);} .cp-why .against{color:var(--red);}
+/* regime */
+.rg-main { font-size:14px; font-weight:800; }
+.rg-main.pin{color:var(--green);} .rg-main.trend{color:var(--red);}
+.rg-play { font-size:10px; color:var(--text); margin-top:4px; line-height:1.45; }
+.rg-vix { font-size:9px; color:var(--muted); margin-top:5px; }
+.rg-vix b{color:var(--yellow);}
+/* levels ladder */
+.lad { display:flex; flex-direction:column; gap:2px; }
+.lad-row { display:flex; align-items:center; gap:6px; font-size:10px; padding:1px 0; }
+.lad-row .nm { color:var(--muted); width:62px; flex-shrink:0; }
+.lad-row .pr { color:#fff; font-weight:700; width:52px; text-align:right; font-variant-numeric:tabular-nums; }
+.lad-row .ds { font-size:9px; width:52px; text-align:right; font-variant-numeric:tabular-nums; }
+.lad-row.res .ds{color:var(--red);} .lad-row.sup .ds{color:var(--green);}
+.lad-row.near { background:rgba(68,136,255,.1); border-radius:3px; }
+.lad-row.near .nm{color:var(--blue);}
+/* risk */
+.rk-row { display:flex; justify-content:space-between; font-size:10px; padding:2px 0; }
+.rk-row .k{color:var(--muted);} .rk-row .v{color:#fff;font-weight:700;font-variant-numeric:tabular-nums;}
+.rk-row .v.risk{color:var(--red);} .rk-row .v.rew{color:var(--green);}
+@media (max-width:820px){ #cockpit { grid-template-columns:1fr 1fr; } }
+@media (max-width:480px){ #cockpit { grid-template-columns:1fr; } }
+
 /* ── Mobile / narrow screens: scroll, stack columns, real chart height ── */
 @media (max-width: 820px) {
   html, body { height:auto; min-height:100vh; overflow-x:hidden; overflow-y:auto; }
@@ -314,6 +359,45 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <span class="fv" id="flow-reading">Waiting for GEX scan…</span>
   <span id="lowvol-tag" style="display:none;font-size:10px;font-weight:700;margin-left:auto"></span>
   <span id="dealer-range" style="margin-left:14px">Dealer range —</span>
+</div>
+
+<div id="cockpit">
+  <div class="cp" id="cp-ticket">
+    <div class="cp-h">Trade Ticket <span class="badge wait" id="tk-badge">WAIT</span></div>
+    <div class="tk-row"><span class="tk-side wait" id="tk-side">—</span><span class="tk-strike" id="tk-strike"></span></div>
+    <div class="tk-sub" id="tk-sub">Waiting for a clean setup…</div>
+    <div class="tk-legs" id="tk-legs" style="display:none">
+      <div class="tk-leg entry">Entry <b id="tk-entry">—</b></div>
+      <div class="tk-leg stop">Stop −50% <b id="tk-stop">—</b></div>
+      <div class="tk-leg tgt">Target +100% <b id="tk-tgt">—</b></div>
+    </div>
+    <div class="cp-conv" id="tk-conv" style="display:none">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted)"><span>Conviction — P(hit target)</span><span id="tk-convpct" style="color:#fff;font-weight:700">—</span></div>
+      <div class="cp-bar"><div class="cp-bar-fill" id="tk-convbar" style="width:0%"></div></div>
+      <div class="cp-why" id="tk-why"></div>
+    </div>
+  </div>
+
+  <div class="cp" id="cp-regime">
+    <div class="cp-h">Regime — what kind of day</div>
+    <div class="rg-main" id="rg-main">—</div>
+    <div class="rg-play" id="rg-play">Waiting for GEX scan…</div>
+    <div class="rg-vix" id="rg-vix"></div>
+  </div>
+
+  <div class="cp" id="cp-levels">
+    <div class="cp-h">Live Levels vs Price <span class="badge wait" id="lad-spot">—</span></div>
+    <div class="lad" id="lad"></div>
+  </div>
+
+  <div class="cp" id="cp-risk">
+    <div class="cp-h">Risk / Size Helper</div>
+    <div class="rk-row"><span class="k">Balance</span><span class="v" id="rk-bal">—</span></div>
+    <div class="rk-row"><span class="k">Est. ATM premium</span><span class="v" id="rk-prem">—</span></div>
+    <div class="rk-row"><span class="k">Affordable</span><span class="v" id="rk-qty">—</span></div>
+    <div class="rk-row"><span class="k">Risk (−50%)</span><span class="v risk" id="rk-risk">—</span></div>
+    <div class="rk-row"><span class="k">Reward (+100%)</span><span class="v rew" id="rk-rew">—</span></div>
+  </div>
 </div>
 
 <div id="body">
@@ -496,6 +580,121 @@ function renderBot(d){
   if(d.regime_ok===true){reg.className='pill ok';reg.textContent='REGIME ALIGNED';}
   else if(d.regime_ok===false){reg.className='pill warn';reg.textContent='REGIME CAUTION';}
   else{reg.className='pill warn';reg.textContent='REGIME --';}
+}
+
+// ── Manual Trade Cockpit ──────────────────────────────────────────────────
+function _normCdf(x){ // Abramowitz-Stegun erf approximation
+  var t=1/(1+0.2316419*Math.abs(x));
+  var d=0.3989423*Math.exp(-x*x/2);
+  var p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return x>0 ? 1-p : p;
+}
+function _etHoursToClose(){
+  try{
+    var parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false}).formatToParts(new Date());
+    var h=+parts.find(function(p){return p.type==='hour';}).value;
+    var m=+parts.find(function(p){return p.type==='minute';}).value;
+    var mins=h*60+m; return Math.max((960-mins)/60, 0.15);   // 16:00 = 960
+  }catch(e){ return 3.0; }
+}
+function renderCockpit(d){
+  var spot=d.spot, vix=d.vix||16, flip=d.gamma_flip, pin=d.max_pain||d.king_strike;
+  var netg=d.net_gex_total, prev=d.prev_close;
+  // ── Regime ──
+  var shortG = (netg!=null && netg<0) || (flip!=null && spot!=null && spot<flip);
+  var rgEl=document.getElementById('rg-main');
+  rgEl.textContent = shortG ? '⚡ TRENDING' : '🎯 PINNING';
+  rgEl.className = 'rg-main '+(shortG?'trend':'pin');
+  document.getElementById('rg-play').innerHTML = shortG
+    ? 'Negative γ — dealers <b style="color:var(--red)">amplify</b> moves. Follow momentum, ride breaks, avoid fading.'
+    : 'Positive γ — dealers <b style="color:var(--green)">dampen</b> moves. Fade extremes toward the pin, expect mean-reversion.';
+  var vb = vix<13?'ultra-low (grind)':vix<18?'normal (trend)':vix<25?'elevated (chop)':vix<35?'high (spikes)':'crisis (flat)';
+  document.getElementById('rg-vix').innerHTML = 'VIX <b>'+vix.toFixed(1)+'</b> · '+vb+(flip?(' · γ-flip $'+(+flip).toFixed(0)):'');
+
+  // ── Levels ladder ──
+  document.getElementById('lad-spot').textContent = spot?('$'+spot.toFixed(2)):'—';
+  document.getElementById('lad-spot').className='badge '+(shortG?'sell':'buy');
+  var levels=[['γ Flip',d.gamma_flip],['Call Wall',d.call_wall],['Put Wall',d.put_wall],['Max Pain',d.max_pain],['King',d.king_strike]]
+    .filter(function(x){return x[1];})
+    .map(function(x){return {nm:x[0],pr:+x[1],ds:(+x[1]-spot)};});
+  levels.sort(function(a,b){return Math.abs(a.ds)-Math.abs(b.ds);});
+  var lad=document.getElementById('lad'); lad.innerHTML='';
+  levels.forEach(function(L,i){
+    var res=L.ds>=0, pct=spot?(L.ds/spot*100):0;
+    var row=document.createElement('div');
+    row.className='lad-row '+(res?'res':'sup')+(i===0?' near':'');
+    row.innerHTML='<span class="nm">'+L.nm+'</span><span class="pr">$'+L.pr.toFixed(0)+'</span>'+
+      '<span class="ds">'+(L.ds>=0?'+':'')+L.ds.toFixed(1)+'</span>'+
+      '<span class="ds" style="width:auto;color:var(--muted)">'+(pct>=0?'+':'')+pct.toFixed(2)+'%</span>';
+    lad.appendChild(row);
+  });
+
+  // ── Risk helper ──
+  var hrs=_etHoursToClose();
+  var atmPrem = spot? 0.4*spot*(vix/100)*Math.sqrt(hrs/(6.5*252)) : 0;  // ~ATM 0DTE premium ($/share)
+  atmPrem = Math.max(atmPrem, 0.05);
+  var cost=atmPrem*100, bal=d.balance||0;
+  var qty=Math.max(0, Math.floor((bal*0.9)/cost));
+  document.getElementById('rk-bal').textContent='$'+bal.toFixed(2);
+  document.getElementById('rk-prem').textContent='$'+atmPrem.toFixed(2)+' ('+('$'+cost.toFixed(0))+'/ct)';
+  document.getElementById('rk-qty').textContent= qty>0? (qty+'x @ $'+cost.toFixed(0)) : 'none affordable';
+  document.getElementById('rk-risk').textContent= qty>0? ('−$'+(cost*qty*0.5).toFixed(0)) : '—';
+  document.getElementById('rk-rew').textContent= qty>0? ('+$'+(cost*qty*1.0).toFixed(0)) : '—';
+
+  // ── Trade ticket ──
+  var side=(d.direction||'').toLowerCase();
+  var reqMove= atmPrem/0.45;                                   // ~SPY pts to double
+  var expMove= spot? spot*(vix/100)*Math.sqrt(hrs/(6.5*252)) : 1;
+  var ratio= expMove>0? reqMove/expMove : 9;
+  var pBase= Math.min(0.95, 2*(1-_normCdf(ratio)));
+  var forA=[], agA=[], adj=1;
+  var call=side==='call';
+  if(prev&&spot){
+    if(call&&spot>prev){adj*=1.10;forA.push('with the up-day');}
+    else if(!call&&spot<prev){adj*=1.10;forA.push('with the down-day');}
+    else if(call&&spot<prev-0.5){adj*=0.90;agA.push('fighting a down-day');}
+    else if(!call&&spot>prev+0.5){adj*=0.90;agA.push('fighting an up-day');}
+  }
+  if(d.spx_confirm==='ALIGNED'){adj*=1.12;forA.push('SPX confirms');}
+  else if(d.spx_confirm==='DIVERGENT'){adj*=0.82;agA.push('SPX diverges');}
+  if(flip&&spot){ if(call&&spot<flip){adj*=0.80;agA.push('calls below flip');} if(!call&&spot<flip){adj*=1.05;forA.push('puts ride neg-γ');} }
+  if(call&&d.call_wall&&(d.call_wall-spot)<reqMove*0.75){adj*=0.85;agA.push('call wall caps it');}
+  if(!call&&d.put_wall&&(spot-d.put_wall)<reqMove*0.75){adj*=0.85;agA.push('put wall caps it');}
+  var prob= Math.max(0, Math.min(0.95, pBase*adj));
+
+  var sess=(d.bot_phase||''), marketOpen = spot && (sess!=='closed' && sess!=='premarket');
+  var feasible = ratio<=1.25;
+  var take = marketOpen && (side==='call'||side==='put') && feasible && prob>=0.38;
+  var badge=document.getElementById('tk-badge');
+  var sideEl=document.getElementById('tk-side'), legs=document.getElementById('tk-legs'), conv=document.getElementById('tk-conv');
+  if(take){
+    var strike=Math.round(spot)+(call?1:-1);
+    sideEl.textContent=call?'LONG CALL':'LONG PUT'; sideEl.className='tk-side '+side;
+    document.getElementById('tk-strike').textContent='$'+strike+' 0DTE';
+    document.getElementById('tk-sub').textContent=(call?'Bet up':'Bet down')+' — near-ATM, ~'+(atmPrem).toFixed(2)+' premium';
+    badge.textContent=call?'BUY CALL':'BUY PUT'; badge.className='badge '+(call?'buy':'sell');
+    document.getElementById('tk-entry').textContent='$'+atmPrem.toFixed(2);
+    document.getElementById('tk-stop').textContent='$'+(atmPrem*0.5).toFixed(2);
+    document.getElementById('tk-tgt').textContent='$'+(atmPrem*2).toFixed(2);
+    legs.style.display='flex'; conv.style.display='block';
+    document.getElementById('tk-convpct').textContent=Math.round(prob*100)+'%';
+    var bar=document.getElementById('tk-convbar');
+    bar.style.width=Math.round(prob*100)+'%';
+    bar.style.background= prob>=0.5?'var(--green)':prob>=0.38?'var(--yellow)':'var(--red)';
+    document.getElementById('tk-why').innerHTML=
+      (forA.length?'<span class="for">✓ '+forA.join(' · ')+'</span><br>':'')+
+      (agA.length?'<span class="against">✗ '+agA.join(' · ')+'</span>':'');
+  } else {
+    sideEl.textContent= marketOpen? 'WAIT':'CLOSED'; sideEl.className='tk-side wait';
+    document.getElementById('tk-strike').textContent='';
+    var reason = !marketOpen ? 'Market closed — no live setup.'
+      : (side!=='call'&&side!=='put') ? 'No clear directional edge right now.'
+      : !feasible ? ('Target needs '+ratio.toFixed(1)+'σ — too far to reach in '+hrs.toFixed(1)+'h.')
+      : ('Conviction '+Math.round(prob*100)+'% < 38% — '+(agA.join(' · ')||'edge too thin')+'.');
+    document.getElementById('tk-sub').textContent=reason;
+    badge.textContent='WAIT'; badge.className='badge wait';
+    legs.style.display='none'; conv.style.display='none';
+  }
 }
 
 function renderSignal(d){
@@ -1073,7 +1272,7 @@ function poll(){
     fetch('/api/history').then(function(r){return r.json();}).catch(function(){return {history:[]};})
   ]).then(function(res){
     var d=res[0]; lastState=d; lastHistory=(res[1]&&res[1].history)||[];
-    renderHeader(d); renderBot(d); renderSignal(d); renderBrain(d);
+    renderHeader(d); renderBot(d); renderSignal(d); renderCockpit(d); renderBrain(d);
     renderGreeks(d); renderFlowReading(d);
     computeEvents(lastHistory,d);
     renderPositions(d); renderFlow(d); renderStats(d); renderJournal(d);
