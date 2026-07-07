@@ -140,7 +140,7 @@ html,body { background:var(--bg); color:var(--text); font-family:var(--font); mi
     <div class="tile">
       <div class="tile-emoji" id="t-money-emoji">🏦</div>
       <div class="tile-val" id="t-money">--</div>
-      <div class="tile-label">Big Money</div>
+      <div class="tile-label">Money Flow</div>
     </div>
   </div>
 
@@ -293,11 +293,15 @@ function render(d){
     else     { me.textContent='Choppy'; mem.textContent='⚡'; me.className='tile-val neg'; }
   } else { me.textContent='--'; }
 
-  // Big money (SPX agreement)
+  // Big money — where the money is actually flowing (call vs put volume)
   var bm=document.getElementById('t-money'), bme=document.getElementById('t-money-emoji');
-  if(d.spx_confirm==='ALIGNED'){ bm.textContent='Agrees'; bme.textContent='👍'; bm.className='tile-val pos'; }
-  else if(d.spx_confirm==='DIVERGENT'){ bm.textContent='Against'; bme.textContent='👎'; bm.className='tile-val neg'; }
-  else { bm.textContent='Neutral'; bme.textContent='🏦'; bm.className='tile-val mut'; }
+  var cvt=+d.call_vol_total||0, pvt=+d.put_vol_total||0, ftot=cvt+pvt;
+  if(ftot>0){
+    var bp=Math.round(cvt/ftot*100);
+    if(bp>=55){ bm.textContent=bp+'% Calls'; bme.textContent='📈'; bm.className='tile-val pos'; }
+    else if(bp<=45){ bm.textContent=(100-bp)+'% Puts'; bme.textContent='📉'; bm.className='tile-val neg'; }
+    else { bm.textContent='Split '+bp+'/'+(100-bp); bme.textContent='⚖️'; bm.className='tile-val mut'; }
+  } else { bm.textContent='--'; bme.textContent='🏦'; bm.className='tile-val mut'; }
 
   // ── HERO state machine ──
   var phase=d.bot_phase, pos=(d.open_positions||[])[0];

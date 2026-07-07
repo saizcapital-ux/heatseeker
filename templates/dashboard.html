@@ -422,6 +422,7 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
   <div id="col-chart">
     <div class="tabs">
       <div class="tab active" data-tab="flow">💰 Money Flow</div>
+      <div class="tab" data-tab="rotation">🔄 Flow Trend</div>
       <div class="tab" data-tab="cloud">☁️ GEX Cloud</div>
       <div class="tab" data-tab="migration">📉 Flip Migration</div>
       <div class="tab" data-tab="profile">📊 GEX Profile</div>
@@ -935,6 +936,7 @@ function setLegend(html){ document.getElementById('tab-legend').innerHTML=html; 
 
 function renderMainChart(d){
   if(activeTab==='flow') renderFlowChart(d);
+  else if(activeTab==='rotation') renderRotation(d);
   else if(activeTab==='cloud') renderCloud(d);
   else if(activeTab==='migration') renderMigration(d);
   else renderProfile(d);
@@ -1285,6 +1287,53 @@ function renderFlowChart(d){
     yaxis:{gridcolor:'rgba(28,32,48,.55)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi]},
     shapes:shapes,annotations:annos,showlegend:false,hovermode:'closest',bargap:0.12};
   plot([barT],layout,'flow');
+}
+
+// ── Flow Trend: money rotating puts↔calls through the day (time-series) ──────
+function renderRotation(d){
+  setLegend('<span style="color:'+C.green+'">▲ bullish (calls)</span><span style="color:'+C.red+'">▼ bearish (puts)</span><span><i class="lg-line" style="border-color:#fff"></i>SPY</span><span style="color:'+C.muted+'">— 50% neutral</span>');
+  var hist=(lastHistory||[]).filter(function(h){return h.bull!=null;});
+  var ph=document.getElementById('chart-ph'), ch=document.getElementById('main-chart');
+  if(hist.length<2){
+    ph.style.display='flex';
+    ph.innerHTML='🔄 Flow Trend builds through the day<br><span style="font-size:9px">bullish % (call vs put volume) over time — money rotating</span>';
+    ch.style.display='none'; return;
+  }
+  ph.style.display='none'; ch.style.display='block';
+  var mob=IS_MOBILE();
+  var t=hist.map(function(h){return h.t;});
+  var bull=hist.map(function(h){return h.bull;});
+  var spot=hist.map(function(h){return h.spot;});
+  var last=bull[bull.length-1], first=bull[0], nowBull=last>=50;
+
+  // bull% line, filled to the 50% neutral baseline; color by current bias
+  var flowT={type:'scatter',mode:'lines',x:t,y:bull,line:{color:nowBull?C.green:C.red,width:2},
+    fill:'tozeroy',fillcolor:nowBull?'rgba(0,208,132,.12)':'rgba(255,51,85,.12)',
+    name:'bullish %',hovertemplate:'%{x} · %{y}% calls<extra></extra>'};
+  var spotT={type:'scatter',mode:'lines',x:t,y:spot,yaxis:'y2',line:{color:'#fff',width:1.3},
+    name:'SPY',hovertemplate:'%{x} · SPY %{y:.2f}<extra></extra>'};
+
+  var shapes=[{type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:50,y1:50,line:{color:C.muted,width:1,dash:'dash'}}];
+  var annos=[];
+  // signal: how far and which way money has rotated since the open
+  var delta=Math.round(last-first), arrow=delta>2?'↗ rotating BULLISH':delta<-2?'↘ rotating BEARISH':'→ flat';
+  var ac=delta>2?C.green:delta<-2?C.red:C.muted;
+  annos.push({xref:'paper',yref:'paper',x:0.012,y:0.975,xanchor:'left',yanchor:'top',
+    text:'🔄 '+arrow+'  ·  '+first+'% → '+last+'% calls since open',
+    showarrow:false,font:{size:mob?9:11,color:ac,family:'monospace'},
+    bgcolor:'rgba(10,12,16,.8)',bordercolor:ac,borderwidth:1,borderpad:mob?3:5});
+  // mark the latest point
+  annos.push({x:t[t.length-1],y:last,xref:'x',yref:'y',text:last+'%',showarrow:true,arrowcolor:ac,
+    ax:mob?-18:-26,ay:0,font:{size:mob?9:10,color:ac,family:'monospace'}});
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},
+    margin:mob?{l:40,r:48,t:14,b:34}:{l:50,r:64,t:16,b:38},
+    xaxis:{type:'category',gridcolor:'rgba(28,32,48,.55)',color:C.muted,nticks:mob?5:9},
+    yaxis:{range:[0,100],gridcolor:'rgba(28,32,48,.55)',color:C.muted,ticksuffix:'%',
+      title:{text:'money flow — % into calls',font:{size:8,color:C.muted}}},
+    yaxis2:{overlaying:'y',side:'right',color:'rgba(255,255,255,.5)',showgrid:false},
+    shapes:shapes,annotations:annos,showlegend:false,hovermode:'x unified'};
+  plot([flowT,spotT],layout,'rotation');
 }
 
 function renderProfile(d){

@@ -401,6 +401,15 @@ def _append_history(state):
         net_total = round(sum((r.get("net_gex_m") or 0) for r in ladder), 2) if ladder else None
         flip = state.get("gamma_flip")
         king = state.get("king_strike")
+        cvt = state.get("call_vol_total")
+        pvt = state.get("put_vol_total")
+        bull = None
+        try:
+            tot = (float(cvt or 0) + float(pvt or 0))
+            if tot > 0:
+                bull = round(float(cvt or 0) / tot * 100)
+        except Exception:
+            bull = None
         pt = {
             "d": today,
             "t": datetime.now(ET).strftime("%H:%M:%S"),
@@ -416,6 +425,7 @@ def _append_history(state):
             "conf": state.get("confidence"),
             "spx": state.get("spx_confirm"),
             "spxdir": state.get("spx_direction"),
+            "cvt": cvt, "pvt": pvt, "bull": bull,   # money-flow rotation series
         }
         spx_confirm = state.get("spx_confirm")
         last = hist[-1] if hist else None
