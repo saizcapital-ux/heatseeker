@@ -259,11 +259,11 @@ header { height:46px; min-height:46px; background:#080a0e; border-bottom:1px sol
 
 /* Levels ladder */
 .lad { display:flex; flex-direction:column; gap:1px; margin:-2px 0; }
-.lad-row { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:8px;
+.lad-row { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:10px;
   font-size:10.5px; padding:3px 6px; border-radius:5px; }
 .lad-row .nm { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .lad-row .pr { color:#fff; font-weight:700; font-variant-numeric:tabular-nums; }
-.lad-row .ds { font-size:9.5px; font-variant-numeric:tabular-nums; min-width:46px; text-align:right; }
+.lad-row .ds { font-size:9.5px; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
 .lad-row.res .ds{color:var(--red);} .lad-row.sup .ds{color:var(--green);}
 .lad-row.near { background:rgba(68,136,255,.12); }
 .lad-row.near .nm{color:var(--blue); font-weight:600;}
@@ -618,8 +618,8 @@ function _etHoursToClose(){
 function renderCockpit(d){
   var spot=d.spot, vix=d.vix||16, flip=d.gamma_flip, pin=d.max_pain||d.king_strike;
   var netg=d.net_gex_total, prev=d.prev_close;
-  // ── Regime ──
-  var shortG = (netg!=null && netg<0) || (flip!=null && spot!=null && spot<flip);
+  // ── Regime (single source of truth: regimeState) ──
+  var _reg=regimeState(d), shortG = _reg.cls==='trend';
   var rgEl=document.getElementById('rg-main');
   rgEl.textContent = shortG ? '⚡ TRENDING' : '🎯 PINNING';
   rgEl.className = 'rg-main '+(shortG?'trend':'pin');
@@ -642,8 +642,7 @@ function renderCockpit(d){
     var row=document.createElement('div');
     row.className='lad-row '+(res?'res':'sup')+(i===0?' near':'');
     row.innerHTML='<span class="nm">'+L.nm+'</span><span class="pr">$'+L.pr.toFixed(0)+'</span>'+
-      '<span class="ds">'+(L.ds>=0?'+':'')+L.ds.toFixed(1)+'</span>'+
-      '<span class="ds" style="width:auto;color:var(--muted)">'+(pct>=0?'+':'')+pct.toFixed(2)+'%</span>';
+      '<span class="ds">'+(L.ds>=0?'+':'')+L.ds.toFixed(1)+' · '+(pct>=0?'+':'')+pct.toFixed(1)+'%</span>';
     lad.appendChild(row);
   });
 
@@ -777,17 +776,21 @@ function renderGreeks(d){
 }
 
 // ── Regime intelligence (VolSignals 4 sub-states) ──
+// SINGLE SOURCE OF TRUTH for the regime, used by the signal bar, the cockpit,
+// AND the chart banner so they can never disagree. NET dealer gamma sign is the
+// primary read (aggregate short/long gamma); spot-vs-flip is only a fallback
+// when net GEX is unavailable, and NEAR FLIP requires net GEX to actually be
+// small — not just spot hugging a degenerate flip while net GEX is strongly signed.
 function regimeState(d){
   var net=d.net_gex_total, spot=d.spot, flip=d.gamma_flip;
-  if(spot&&flip&&Math.abs(spot-flip)/spot<0.005) return {code:'NEAR FLIP',cls:'nearflip'};
-  // Flip-primary (matches the chart banner): above γ-flip = long-gamma/pin, below = trend.
-  if(spot&&flip){
-    if(spot<flip) return {code:'-GEX TREND',cls:'trend'};
-    return (net!=null && net>0 && net<2) ? {code:'+GEX LIGHT',cls:'light'} : {code:'+GEX PIN',cls:'pin'};
+  if(net==null){                                  // no net GEX → fall back to flip
+    if(spot&&flip) return spot<flip ? {code:'-GEX TREND',cls:'trend'} : {code:'+GEX PIN',cls:'pin'};
+    return {code:'--',cls:''};
   }
-  if(net==null) return {code:'--',cls:''};
-  if(net>0) return net>=2 ? {code:'+GEX PIN',cls:'pin'} : {code:'+GEX LIGHT',cls:'light'};
-  return {code:'-GEX TREND',cls:'trend'};
+  var mag=Math.abs(net);                           // net_gex_total is in $M
+  if(mag<30 && spot&&flip&&Math.abs(spot-flip)/spot<0.004) return {code:'NEAR FLIP',cls:'nearflip'};
+  if(net<0) return {code:'-GEX TREND',cls:'trend'};
+  return mag<60 ? {code:'+GEX LIGHT',cls:'light'} : {code:'+GEX PIN',cls:'pin'};
 }
 
 // ── Feature 7: live flow-reading interpreter + dealer range ──
@@ -1036,14 +1039,17 @@ function renderCloud(d){
     if(spot&&spot>=yLo&&spot<=yHi) annos.push(gexTag(spot,'#fff','● SPY '+spot.toFixed(2),'#fff'));
 
     // Regime banner + plain-English trade context (the "so what" of the chart).
-    if(flip&&spot){
-      var posG=spot>=flip;
+    // Uses regimeState() — the SAME regime the cockpit and signal bar show.
+    if(spot){
+      var _r=regimeState(d), posG=(_r.cls==='pin'||_r.cls==='light'), nearF=(_r.cls==='nearflip');
+      var bC=nearF?C.orange:(posG?C.green:C.red);
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.975,xanchor:'left',yanchor:'top',
-        text:(posG?(mob?'▲ +γ PIN':'▲ POSITIVE γ — pinning / mean-revert'):(mob?'▼ −γ TREND':'▼ NEGATIVE γ — trending / volatile')),
-        showarrow:false,font:{size:mob?8:10,color:posG?C.green:C.red,family:'monospace'},
-        bgcolor:'rgba(10,12,16,.75)',bordercolor:posG?C.green:C.red,borderwidth:1,borderpad:mob?2:4});
+        text:(nearF?(mob?'◆ NEAR FLIP':'◆ NEAR γ-FLIP — whipsaw'):posG?(mob?'▲ +γ PIN':'▲ POSITIVE γ — pinning / mean-revert'):(mob?'▼ −γ TREND':'▼ NEGATIVE γ — trending / volatile')),
+        showarrow:false,font:{size:mob?8:10,color:bC,family:'monospace'},
+        bgcolor:'rgba(10,12,16,.75)',bordercolor:bC,borderwidth:1,borderpad:mob?2:4});
       var ctx,cc;
-      if(spot<flip){ ctx=mob?'⚡ Below flip — no calls':'⚡ Below γ-flip — trend zone, avoid calls'; cc=C.red; }
+      if(nearF){ ctx=mob?'◆ Near flip — whipsaw':'◆ Near the flip — highest whipsaw, wait for a break'; cc=C.orange; }
+      else if(!posG){ ctx=mob?'⚡ Trend — follow momentum':'⚡ Negative γ — follow momentum, don’t fade'; cc=C.red; }
       else if(cw&&spot>=cw-1){ ctx=mob?'⚠ Call wall — fade':'⚠ At call wall — rally capped, fade / take profit'; cc=C.yellow; }
       else if(pw&&spot<=pw+1){ ctx=mob?'🎯 Put wall — dip-buy':'🎯 At put wall + positive γ — DIP-BUY zone'; cc=C.green; }
       else { ctx=mob?'😌 In range — fade edges':'😌 In range — pinning, fade the edges'; cc=C.blue; }
