@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HEATSEEKER — Chart + GEX Money Flow</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  :root{ --bg:#0a0c10; --panel:#0f1219; --border:#1c2030; --green:#00d084; --red:#ff3355;
+    --blue:#4488ff; --yellow:#f5c842; --muted:#4a5470; --text:#c8ccd8;
+    --font:'SF Mono','Fira Code',monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+  #top{height:34px;display:flex;align-items:center;gap:16px;padding:0 14px;border-bottom:1px solid var(--border);background:#080a0e;font-size:12px}
+  #top .logo{font-weight:700;letter-spacing:3px;color:var(--green)}
+  #top .k{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-right:4px}
+  #top .v{font-weight:700}
+  #top .spy{color:#fff}#top .vix{color:var(--yellow)}
+  #top .flow.bull{color:var(--green)}#top .flow.bear{color:var(--red)}
+  #top .reg{margin-left:auto;font-weight:700;padding:3px 9px;border-radius:5px;font-size:11px}
+  .reg.pin{background:rgba(0,208,132,.14);color:var(--green)}
+  .reg.trend{background:rgba(255,51,85,.14);color:var(--red)}
+  .reg.flip{background:rgba(245,140,66,.16);color:#ff8c42}
+  #chart{width:100%;height:calc(100vh - 34px)}
+  #ph{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);text-align:center;font-size:13px}
+  @media(max-width:640px){ #top{flex-wrap:wrap;height:auto;padding:6px 10px;gap:8px 14px} #chart{height:calc(100vh - 56px)} }
+</style>
+</head>
+<body>
+<div id="top">
+  <span class="logo">HEATSEEKER</span>
+  <span><span class="k">SPY</span><span class="v spy" id="t-spy">--</span></span>
+  <span><span class="k">VIX</span><span class="v vix" id="t-vix">--</span></span>
+  <span><span class="k">Flow</span><span class="v flow" id="t-flow">--</span></span>
+  <span class="reg" id="t-reg">--</span>
+</div>
+<div id="chart"></div>
+<div id="ph">Loading chart + GEX money flow…</div>
+
+<script>
+var C={bg:'#0a0c10',green:'#00d084',red:'#ff3355',blue:'#4488ff',yellow:'#f5c842',muted:'#4a5470',text:'#c8ccd8',orange:'#ff8c42'};
+var inited=false;
+function num(v){return (v==null||isNaN(v))?null:+v;}
+
+function regime(d){
+  var net=num(d.net_gex_total), spot=num(d.spot), flip=num(d.gamma_flip);
+  if(net==null){ if(spot&&flip) return spot<flip?{t:'▼ TREND',c:'trend'}:{t:'▲ PIN',c:'pin'}; return {t:'--',c:''}; }
+  var mag=Math.abs(net);
+  if(mag<30&&spot&&flip&&Math.abs(spot-flip)/spot<0.004) return {t:'◆ NEAR FLIP',c:'flip'};
+  if(net<0) return {t:'▼ TRENDING',c:'trend'};
+  return {t:'▲ PINNING',c:'pin'};
+}
+
+function draw(d,hist){
+  var spot=num(d.spot), candles=d.candles||[], gex=(d.gex_by_strike||[]).slice();
+  var ph=document.getElementById('ph');
+  if(!candles.length && !gex.length){ ph.style.display='block'; ph.textContent='Chart + GEX money flow load on the next scan…'; return; }
+  ph.style.display='none';
+  var mob=window.innerWidth<=640, xR=mob?1:0.70;   // candle domain; GEX on the right ~30%
+  var traces=[], shapes=[], annos=[];
+
+  // ── price candles ──
+  var yLo, yHi;
+  if(candles.length){
+    var t=candles.map(function(c){return c.t;});
+    traces.push({type:'candlestick',x:t,
+      open:candles.map(function(c){return c.o;}),high:candles.map(function(c){return c.h;}),
+      low:candles.map(function(c){return c.l;}),close:candles.map(function(c){return c.c;}),
+      increasing:{line:{color:C.green,width:1},fillcolor:C.green},
+      decreasing:{line:{color:C.red,width:1},fillcolor:C.red},name:'SPY',
+      hovertemplate:'<b>%{x|%H:%M}</b> O:%{open:.2f} H:%{high:.2f} L:%{low:.2f} C:%{close:.2f}<extra></extra>'});
+    var lows=candles.map(function(c){return c.l;}), highs=candles.map(function(c){return c.h;});
+    yLo=Math.min.apply(null,lows); yHi=Math.max.apply(null,highs);
+  } else if(gex.length){
+    var ks=gex.map(function(s){return s.strike;}); yLo=Math.min.apply(null,ks); yHi=Math.max.apply(null,ks);
+  }
+  if(spot){ yLo=Math.min(yLo,spot); yHi=Math.max(yHi,spot); }
+  // frame the range to the key levels near spot so their lines show
+  var glc=Math.max(6,(spot||500)*0.02);
+  [d.gamma_flip,d.call_wall,d.put_wall,d.king_strike,d.max_pain].forEach(function(v){ v=num(v); if(v&&spot&&Math.abs(v-spot)<=glc){ yLo=Math.min(yLo,v); yHi=Math.max(yHi,v);} });
+  var pad=((yHi-yLo)*0.06)||1; yLo-=pad; yHi+=pad;
+
+  // ── GEX money flow histogram by strike (right side, shares price axis) ──
+  if(gex.length){
+    gex.sort(function(a,b){return a.strike-b.strike;});
+    var vis=gex.filter(function(s){return s.strike>=yLo&&s.strike<=yHi;});
+    if(vis.length){
+      var netOf=function(s){return s.net_gex_m!=null?s.net_gex_m:(s.net_gex!=null?s.net_gex:(s.call_gex_m||0)+(s.put_gex_m||0));};
+      traces.push({type:'bar',orientation:'h',xaxis:'x2',yaxis:'y',
+        y:vis.map(function(s){return s.strike;}), x:vis.map(netOf),
+        marker:{color:vis.map(function(s){return netOf(s)>=0?'rgba(0,208,132,.8)':'rgba(255,51,85,.8)';})},
+        width:vis.map(function(){return 0.7;}),
+        hovertemplate:'$%{y} · net GEX %{x:.2f}M<br>call OI %{customdata[0]:,} · put OI %{customdata[1]:,}<extra></extra>',
+        customdata:vis.map(function(s){return [s.call_oi||0,s.put_oi||0];}),showlegend:false});
+      var mN=0; vis.forEach(function(s){var n=Math.abs(netOf(s)); if(n>mN)mN=n;}); if(!mN)mN=1;
+      annos.push({xref:'paper',yref:'paper',x:mob?0.5:((xR+1)/2),y:1,yanchor:'bottom',xanchor:'center',
+        text:'GEX money flow →',showarrow:false,font:{size:9,color:C.muted,family:'monospace'}});
+    }
+  }
+
+  // ── key levels: flip + OI walls (labeled as dip/rip zones) + spot ──
+  function hline(y,color,w,dash){ if(!y)return; shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:y,y1:y,line:{color:color,width:w,dash:dash}}); }
+  function tag(y,color,text){ if(!y||y<yLo||y>yHi)return; annos.push({xref:'paper',yref:'y',x:0.008,y:y,xanchor:'left',yanchor:'middle',text:text,showarrow:false,font:{size:mob?8:10,color:color,family:'monospace'},bgcolor:'rgba(10,12,16,.82)',bordercolor:color,borderwidth:1,borderpad:2}); }
+  hline(num(d.gamma_flip),C.yellow,1,'dot');    tag(num(d.gamma_flip),C.yellow,(mob?'FLIP ':'γ FLIP ')+Math.round(d.gamma_flip||0));
+  hline(num(d.call_wall),C.red,1,'dot');        tag(num(d.call_wall),C.red,(mob?'RIP↓ ':'⬇ SHORT-RIP · CALL WALL ')+Math.round(d.call_wall||0));
+  hline(num(d.put_wall),C.green,1,'dot');       tag(num(d.put_wall),C.green,(mob?'DIP↑ ':'⬆ BUY-DIP · PUT WALL ')+Math.round(d.put_wall||0));
+  if(spot){ hline(spot,'#fff',1.5,'dash'); tag(spot,'#fff','● SPY '+spot.toFixed(2)); }
+
+  // money-flow bias banner
+  var cvt=num(d.call_vol_total)||0, pvt=num(d.put_vol_total)||0, tot=cvt+pvt;
+  if(tot>0){ var bp=Math.round(cvt/tot*100), bull=bp>=50;
+    annos.push({xref:'paper',yref:'paper',x:0.012,y:0.985,xanchor:'left',yanchor:'top',
+      text:(bull?'💰 MONEY FLOW BULLISH ':'💰 MONEY FLOW BEARISH ')+(bull?bp:100-bp)+'% '+(bull?'· buying calls':'· buying puts'),
+      showarrow:false,font:{size:mob?9:11,color:bull?C.green:C.red,family:'monospace'},
+      bgcolor:'rgba(10,12,16,.8)',bordercolor:bull?C.green:C.red,borderwidth:1,borderpad:mob?3:5}); }
+
+  var layout={paper_bgcolor:C.bg,plot_bgcolor:C.bg,font:{family:'monospace',color:C.text,size:10},
+    margin:mob?{l:44,r:10,t:16,b:28}:{l:58,r:16,t:18,b:34},
+    xaxis:{domain:[0,xR],type:'date',gridcolor:'rgba(28,32,48,.5)',color:C.muted,tickformat:'%H:%M',rangeslider:{visible:false}},
+    xaxis2:{domain:mob?[0,1]:[xR+0.02,1],anchor:'y',zeroline:true,zerolinecolor:'rgba(74,84,112,.6)',showgrid:false,showticklabels:false,visible:!mob},
+    yaxis:{gridcolor:'rgba(28,32,48,.5)',color:C.muted,tickformat:'$.0f',range:[yLo,yHi],side:'left'},
+    shapes:shapes,annotations:annos,showlegend:false,hovermode:'closest',bargap:0.15,dragmode:'pan'};
+  if(mob) layout.xaxis.domain=[0,1];  // on phone: candles full width, GEX overlays behind (kept subtle)
+
+  var cfg={responsive:true,scrollZoom:true,displaylogo:false,
+    modeBarButtonsToRemove:['select2d','lasso2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']};
+  if(!inited){ Plotly.newPlot('chart',traces,layout,cfg); inited=true; }
+  else { layout.uirevision='flow'; Plotly.react('chart',traces,layout,cfg); }
+}
+
+function top(d){
+  var spy=num(d.spot), vix=num(d.vix);
+  document.getElementById('t-spy').textContent= spy!=null?('$'+spy.toFixed(2)):'--';
+  document.getElementById('t-vix').textContent= vix!=null?vix.toFixed(2):'--';
+  var cvt=num(d.call_vol_total)||0, pvt=num(d.put_vol_total)||0, tot=cvt+pvt;
+  var fe=document.getElementById('t-flow');
+  if(tot>0){ var bp=Math.round(cvt/tot*100); if(bp>=55){fe.textContent=bp+'% calls';fe.className='v flow bull';}
+    else if(bp<=45){fe.textContent=(100-bp)+'% puts';fe.className='v flow bear';}
+    else {fe.textContent='split '+bp+'/'+(100-bp);fe.className='v flow';} }
+  else { fe.textContent='--'; fe.className='v flow'; }
+  var r=regime(d), re=document.getElementById('t-reg'); re.textContent=r.t; re.className='reg '+r.c;
+}
+
+function poll(){
+  Promise.all([
+    fetch('/api/state').then(function(r){return r.json();}),
+    fetch('/api/history').then(function(r){return r.json();}).catch(function(){return {history:[]};})
+  ]).then(function(res){ var d=res[0]||{}; top(d); draw(d,(res[1]&&res[1].history)||[]); })
+   .catch(function(e){ console.error('poll',e); });
+}
+poll(); setInterval(poll,8000);
+window.addEventListener('resize',function(){ inited=false; });
+</script>
+</body>
+</html>

@@ -673,6 +673,12 @@ def index():
 
 @app.route("/pro")
 def pro():
+    # Clean, focused view: price chart + GEX money-flow side panel only.
+    return render_template("flow.html")
+
+@app.route("/pro-full")
+def pro_full():
+    # The full pro terminal (cockpit, signal bar, all panels) — kept as a backup.
     return render_template("dashboard.html")
 
 @app.route("/api/state")
