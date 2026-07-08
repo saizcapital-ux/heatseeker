@@ -987,4 +987,7 @@ a{{color:#4488ff;font-size:12px}} .ts{{color:#4a5470;font-size:11px;text-align:c
 </body></html>"""
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
+    # threaded=True so a large static asset (the 3.6MB Plotly bundle) can't block
+    # /api/state or other clients — the dev server otherwise serves one request
+    # at a time, which stalls the dashboard on slower/mobile connections.
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False, threaded=True)
