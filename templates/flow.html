@@ -114,6 +114,36 @@ function draw(d,hist){
     }
   }
 
+  // ── Money-flow ORBS: a glowing circle at each strike, sized by total volume,
+  //    green when calls dominate / red when puts do. Bigger orb = more money
+  //    there. Sits as a column at the current time on the price chart. ──
+  if(candles.length && gex.length){
+    var orbs=gex.filter(function(s){ return s.strike>=yLo&&s.strike<=yHi && ((s.call_vol||0)+(s.put_vol||0))>0; });
+    if(orbs.length){
+      var mv=0; orbs.forEach(function(s){ var v=(s.call_vol||0)+(s.put_vol||0); if(v>mv)mv=v; }); if(!mv)mv=1;
+      var lastT=candles[candles.length-1].t;
+      var ox=orbs.map(function(){return lastT;});
+      var oy=orbs.map(function(s){return s.strike;});
+      var osz=orbs.map(function(s){ var v=(s.call_vol||0)+(s.put_vol||0); return 9+44*Math.sqrt(v/mv); });
+      var oCall=orbs.map(function(s){ return (s.call_vol||0)>=(s.put_vol||0); });
+      // glow halo (large, faint)
+      traces.push({type:'scatter',mode:'markers',x:ox,y:oy,cliponaxis:false,
+        marker:{size:osz.map(function(s){return s*1.7;}),line:{width:0},
+          color:oCall.map(function(c){return c?'rgba(0,208,132,0.10)':'rgba(255,51,85,0.10)';})},
+        hoverinfo:'skip',showlegend:false});
+      // core orb (brighter, thin ring)
+      traces.push({type:'scatter',mode:'markers',x:ox,y:oy,cliponaxis:false,
+        marker:{size:osz,opacity:0.55,
+          color:oCall.map(function(c){return c?C.green:C.red;}),
+          line:{width:1,color:oCall.map(function(c){return c?'rgba(120,255,200,.9)':'rgba(255,150,170,.9)';})}},
+        customdata:orbs.map(function(s){return [s.call_vol||0,s.put_vol||0];}),
+        hovertemplate:'$%{y} · money orb<br>calls %{customdata[0]:,} · puts %{customdata[1]:,} ct<extra></extra>',
+        showlegend:false});
+      annos.push({xref:'paper',yref:'paper',x:mob?0.98:(xR-0.01),y:0.02,yanchor:'bottom',xanchor:'right',
+        text:'● money orbs = volume/strike',showarrow:false,font:{size:8,color:C.muted,family:'monospace'}});
+    }
+  }
+
   // ── key levels: flip + OI walls (labeled as dip/rip zones) + spot ──
   function hline(y,color,w,dash){ if(!y)return; shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:y,y1:y,line:{color:color,width:w,dash:dash}}); }
   function tag(y,color,text){ if(!y||y<yLo||y>yHi)return; annos.push({xref:'paper',yref:'y',x:0.008,y:y,xanchor:'left',yanchor:'middle',text:text,showarrow:false,font:{size:mob?8:10,color:color,family:'monospace'},bgcolor:'rgba(10,12,16,.82)',bordercolor:color,borderwidth:1,borderpad:2}); }
