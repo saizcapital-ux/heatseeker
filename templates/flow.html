@@ -114,33 +114,25 @@ function draw(d,hist){
     }
   }
 
-  // ── Money-flow ORBS: a glowing circle at each strike, sized by total volume,
-  //    green when calls dominate / red when puts do. Bigger orb = more money
-  //    there. Sits as a column at the current time on the price chart. ──
+  // ── Money-flow CLOUD: each strike becomes a glowing horizontal band across
+  //    the chart — green where calls are being bought, red where puts are,
+  //    brighter = more volume. A smooth gradient cloud behind the candles. ──
   if(candles.length && gex.length){
-    var orbs=gex.filter(function(s){ return s.strike>=yLo&&s.strike<=yHi && ((s.call_vol||0)+(s.put_vol||0))>0; });
-    if(orbs.length){
-      var mv=0; orbs.forEach(function(s){ var v=(s.call_vol||0)+(s.put_vol||0); if(v>mv)mv=v; }); if(!mv)mv=1;
-      var lastT=candles[candles.length-1].t;
-      var ox=orbs.map(function(){return lastT;});
-      var oy=orbs.map(function(s){return s.strike;});
-      var osz=orbs.map(function(s){ var v=(s.call_vol||0)+(s.put_vol||0); return 9+44*Math.sqrt(v/mv); });
-      var oCall=orbs.map(function(s){ return (s.call_vol||0)>=(s.put_vol||0); });
-      // glow halo (large, faint)
-      traces.push({type:'scatter',mode:'markers',x:ox,y:oy,cliponaxis:false,
-        marker:{size:osz.map(function(s){return s*1.7;}),line:{width:0},
-          color:oCall.map(function(c){return c?'rgba(0,208,132,0.10)':'rgba(255,51,85,0.10)';})},
-        hoverinfo:'skip',showlegend:false});
-      // core orb (brighter, thin ring)
-      traces.push({type:'scatter',mode:'markers',x:ox,y:oy,cliponaxis:false,
-        marker:{size:osz,opacity:0.55,
-          color:oCall.map(function(c){return c?C.green:C.red;}),
-          line:{width:1,color:oCall.map(function(c){return c?'rgba(120,255,200,.9)':'rgba(255,150,170,.9)';})}},
-        customdata:orbs.map(function(s){return [s.call_vol||0,s.put_vol||0];}),
-        hovertemplate:'$%{y} · money orb<br>calls %{customdata[0]:,} · puts %{customdata[1]:,} ct<extra></extra>',
-        showlegend:false});
-      annos.push({xref:'paper',yref:'paper',x:mob?0.98:(xR-0.01),y:0.02,yanchor:'bottom',xanchor:'right',
-        text:'● money orbs = volume/strike',showarrow:false,font:{size:8,color:C.muted,family:'monospace'}});
+    var fv=gex.filter(function(s){ return ((s.call_vol||0)+(s.put_vol||0))>0; });
+    if(fv.length){
+      var fxs=fv.map(function(s){return s.strike;});
+      var fys=fv.map(function(s){return (s.call_vol||0)-(s.put_vol||0);});   // net directional volume
+      var mN=0; fys.forEach(function(v){ if(Math.abs(v)>mN)mN=Math.abs(v); }); if(!mN)mN=1;
+      var bw=Math.max(0.8,(yHi-yLo)/60);                                     // cloud band width (price pts)
+      var flowAt=function(yv){ var n=0,dn=0; for(var i=0;i<fxs.length;i++){ var dd=yv-fxs[i], w=Math.exp(-dd*dd/(2*bw*bw)); n+=w*fys[i]; dn+=w; } return dn>0?n/dn:0; };
+      var N=110, yg=[], zg=[], t0=candles[0].t, tN=candles[candles.length-1].t;
+      for(var gi=0;gi<N;gi++){ var yv=yLo+(yHi-yLo)*gi/(N-1); yg.push(yv); var zv=flowAt(yv); zg.push([zv,zv]); }
+      traces.unshift({type:'heatmap',x:[t0,tN],y:yg,z:zg,zsmooth:'best',zmin:-mN,zmax:mN,
+        showscale:false,hoverinfo:'skip',
+        colorscale:[[0,'rgba(255,51,85,0.55)'],[0.42,'rgba(255,51,85,0.10)'],[0.5,'rgba(10,12,16,0)'],[0.58,'rgba(0,208,132,0.10)'],[1,'rgba(0,208,132,0.55)']]});
+      annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
+        text:'☁ money-flow cloud · green=calls bought · red=puts bought',showarrow:false,
+        font:{size:mob?8:9,color:C.muted,family:'monospace'},bgcolor:'rgba(10,12,16,.6)',borderpad:2});
     }
   }
 
