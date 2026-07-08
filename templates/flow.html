@@ -133,6 +133,16 @@ function draw(d,hist){
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
         text:'☁ money-flow cloud · green=calls bought · red=puts bought',showarrow:false,
         font:{size:mob?8:9,color:C.muted,family:'monospace'},bgcolor:'rgba(10,12,16,.6)',borderpad:2});
+      // ── heaviest-flow line: the single strike with the most money ──
+      var hi=fv[0]; fv.forEach(function(s){ if(((s.call_vol||0)+(s.put_vol||0)) > ((hi.call_vol||0)+(hi.put_vol||0))) hi=s; });
+      if(hi.strike>=yLo && hi.strike<=yHi){
+        var hiTot=(hi.call_vol||0)+(hi.put_vol||0), hiCall=(hi.call_vol||0)>=(hi.put_vol||0), hc=hiCall?C.green:C.red;
+        shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:hi.strike,y1:hi.strike,line:{color:hc,width:1.5}});
+        annos.push({xref:'paper',yref:'y',x:mob?0.5:0.34,y:hi.strike,xanchor:'center',yanchor:'bottom',
+          text:'◆ HEAVIEST FLOW $'+Math.round(hi.strike)+' · '+hiTot.toLocaleString()+' ct '+(hiCall?'calls':'puts'),
+          showarrow:false,font:{size:mob?8:10,color:hc,family:'monospace'},
+          bgcolor:'rgba(10,12,16,.85)',bordercolor:hc,borderwidth:1,borderpad:2});
+      }
     }
   }
 
