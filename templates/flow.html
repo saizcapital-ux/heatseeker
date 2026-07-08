@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>HEATSEEKER — Chart + GEX Money Flow</title>
 <script>window.__plotlyFailed=false;</script>
-<script src="/static/plotly.min.js" onerror="window.__plotlyFailed=true"></script>
+<script defer src="/static/plotly.min.js" onerror="window.__plotlyFailed=true"></script>
 <style>
   :root{ --bg:#0a0c10; --panel:#0f1219; --border:#1c2030; --green:#00d084; --red:#ff3355;
     --blue:#4488ff; --yellow:#f5c842; --muted:#4a5470; --text:#c8ccd8;
@@ -43,7 +43,7 @@
 // static "Loading…" text, this line never ran (script blocked / not deployed).
 (function(){ var p=document.getElementById('ph'); if(p) p.textContent='Starting… fetching data'; })();
 var C={bg:'#0a0c10',green:'#00d084',red:'#ff3355',blue:'#4488ff',yellow:'#f5c842',muted:'#4a5470',text:'#c8ccd8',orange:'#ff8c42'};
-var inited=false;
+var inited=false, lastData=null, lastHist=[];
 function num(v){return (v==null||isNaN(v))?null:+v;}
 function plotlyReady(){ return typeof Plotly!=='undefined' && !window.__plotlyFailed; }
 
@@ -58,8 +58,13 @@ function regime(d){
 
 function draw(d,hist){
   var ph=document.getElementById('ph');
+  lastData=d; lastHist=hist;                       // remember for a re-draw when Plotly is ready
   if(window.__plotlyFailed){ ph.style.display='block'; ph.innerHTML='Chart library failed to load.<br><span style="font-size:10px">/static/plotly.min.js did not load — check the deploy</span>'; return; }
-  if(typeof Plotly==='undefined'){ ph.style.display='block'; ph.textContent='Chart library still loading… (retrying)'; return; }
+  if(typeof Plotly==='undefined'){
+    ph.style.display='block'; ph.textContent='Loading chart library…';
+    setTimeout(function(){ if(lastData) draw(lastData,lastHist); }, 300);   // re-check until ready
+    return;
+  }
   var spot=num(d.spot), candles=d.candles||[], gex=(d.gex_by_strike||[]).slice();
   if(!candles.length && !gex.length){
     ph.style.display='block';
