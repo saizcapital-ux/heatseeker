@@ -123,9 +123,14 @@ function draw(d,hist){
       var fxs=fv.map(function(s){return s.strike;});
       var fys=fv.map(function(s){return (s.call_vol||0)-(s.put_vol||0);});   // net directional volume
       var mN=0; fys.forEach(function(v){ if(Math.abs(v)>mN)mN=Math.abs(v); }); if(!mN)mN=1;
-      var bw=Math.max(0.8,(yHi-yLo)/60);                                     // cloud band width (price pts)
-      var flowAt=function(yv){ var n=0,dn=0; for(var i=0;i<fxs.length;i++){ var dd=yv-fxs[i], w=Math.exp(-dd*dd/(2*bw*bw)); n+=w*fys[i]; dn+=w; } return dn>0?n/dn:0; };
-      var N=110, yg=[], zg=[], t0=candles[0].t, tN=candles[candles.length-1].t;
+      // Precise bands: each strike renders as a tight band at its EXACT price.
+      // half-width scales to the strike spacing (SPY $1 → ~0.42), so bands are
+      // crisp and separated instead of a diffuse blur.
+      var sp=[]; for(var si=1;si<fxs.length;si++){ var ds2=fxs[si]-fxs[si-1]; if(ds2>0)sp.push(ds2); }
+      sp.sort(function(a,b){return a-b;});
+      var spacing=sp.length?sp[Math.floor(sp.length/2)]:1, half=Math.max(0.3,spacing*0.42);
+      var flowAt=function(yv){ var best=0,bd=1e9; for(var i=0;i<fxs.length;i++){ var dd=Math.abs(yv-fxs[i]); if(dd<bd){bd=dd;best=fys[i];} } return bd<=half?best:0; };
+      var N=200, yg=[], zg=[], t0=candles[0].t, tN=candles[candles.length-1].t;
       for(var gi=0;gi<N;gi++){ var yv=yLo+(yHi-yLo)*gi/(N-1); yg.push(yv); var zv=flowAt(yv); zg.push([zv,zv]); }
       traces.unshift({type:'heatmap',x:[t0,tN],y:yg,z:zg,zsmooth:'best',zmin:-mN,zmax:mN,
         showscale:false,hoverinfo:'skip',
