@@ -52,9 +52,14 @@ function regime(d){
 }
 
 function draw(d,hist){
-  var spot=num(d.spot), candles=d.candles||[], gex=(d.gex_by_strike||[]).slice();
   var ph=document.getElementById('ph');
-  if(!candles.length && !gex.length){ ph.style.display='block'; ph.textContent='Chart + GEX money flow load on the next scan…'; return; }
+  if(typeof Plotly==='undefined'){ ph.style.display='block'; ph.textContent='Chart library still loading… (retrying)'; return; }
+  var spot=num(d.spot), candles=d.candles||[], gex=(d.gex_by_strike||[]).slice();
+  if(!candles.length && !gex.length){
+    ph.style.display='block';
+    ph.innerHTML='Waiting for market data…<br><span style="font-size:10px">candles + GEX populate on the scan (every few min during market hours)</span>';
+    return;
+  }
   ph.style.display='none';
   var mob=window.innerWidth<=640, xR=mob?1:0.70;   // candle domain; GEX on the right ~30%
   var traces=[], shapes=[], annos=[];
@@ -142,11 +147,22 @@ function top(d){
 }
 
 function poll(){
-  Promise.all([
-    fetch('/api/state').then(function(r){return r.json();}),
-    fetch('/api/history').then(function(r){return r.json();}).catch(function(){return {history:[]};})
-  ]).then(function(res){ var d=res[0]||{}; top(d); draw(d,(res[1]&&res[1].history)||[]); })
-   .catch(function(e){ console.error('poll',e); });
+  fetch('/api/state')
+    .then(function(r){ if(!r.ok) throw new Error('state HTTP '+r.status); return r.json(); })
+    .then(function(d){
+      d=d||{};
+      try{ top(d); }catch(e){ console.error('top',e); }
+      return fetch('/api/history').then(function(r){return r.json();}).catch(function(){return {history:[]};})
+        .then(function(h){ try{ draw(d,(h&&h.history)||[]); }catch(e){
+          console.error('draw',e);
+          var ph=document.getElementById('ph'); ph.style.display='block'; ph.textContent='Render error: '+e.message;
+        } });
+    })
+    .catch(function(e){
+      console.error('poll',e);
+      var ph=document.getElementById('ph'); ph.style.display='block';
+      ph.innerHTML='Can’t reach the data feed…<br><span style="font-size:10px">'+(e.message||e)+' — retrying</span>';
+    });
 }
 poll(); setInterval(poll,8000);
 window.addEventListener('resize',function(){ inited=false; });
