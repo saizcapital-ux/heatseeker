@@ -133,6 +133,29 @@ function draw(d,hist){
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
         text:'☁ money-flow cloud · green=calls bought · red=puts bought',showarrow:false,
         font:{size:mob?8:9,color:C.muted,family:'monospace'},bgcolor:'rgba(10,12,16,.6)',borderpad:2});
+      // ── HIGH-FLOW ZONES: shade the price bands where volume concentrates ──
+      var vols=fv.map(function(s){ return {k:s.strike, v:(s.call_vol||0)+(s.put_vol||0), call:(s.call_vol||0)>=(s.put_vol||0)}; })
+                 .sort(function(a,b){return a.k-b.k;});
+      var maxTot=0; vols.forEach(function(o){ if(o.v>maxTot)maxTot=o.v; }); if(!maxTot)maxTot=1;
+      var thr=maxTot*0.55;                         // "high flow" = ≥55% of the busiest strike
+      var zones=[], cur=null;
+      vols.forEach(function(o){
+        if(o.v<thr){ if(cur){zones.push(cur);cur=null;} return; }
+        if(cur && o.k-cur.hiK<=1.5){ cur.hiK=o.k; cur.callw+=o.call?o.v:0; cur.putw+=o.call?0:o.v; }
+        else { if(cur)zones.push(cur); cur={loK:o.k,hiK:o.k,callw:o.call?o.v:0,putw:o.call?0:o.v}; }
+      });
+      if(cur)zones.push(cur);
+      zones.forEach(function(z){
+        if(z.hiK<yLo||z.loK>yHi) return;
+        var call=z.callw>=z.putw, zc=call?C.green:C.red;
+        shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:z.loK-0.5,y1:z.hiK+0.5,
+          fillcolor:call?'rgba(0,208,132,0.06)':'rgba(255,51,85,0.06)',
+          line:{color:zc,width:1,dash:'dot'},layer:'above'});
+        annos.push({xref:'paper',yref:'y',x:0.992,y:(z.loK+z.hiK)/2,xanchor:'right',yanchor:'middle',
+          text:'HIGH FLOW',showarrow:false,font:{size:mob?7:8,color:zc,family:'monospace'},
+          bgcolor:'rgba(10,12,16,.7)',borderpad:1});
+      });
+
       // ── heaviest-flow line: the single strike with the most money ──
       var hi=fv[0]; fv.forEach(function(s){ if(((s.call_vol||0)+(s.put_vol||0)) > ((hi.call_vol||0)+(hi.put_vol||0))) hi=s; });
       if(hi.strike>=yLo && hi.strike<=yHi){
