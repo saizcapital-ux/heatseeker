@@ -132,7 +132,7 @@ function draw(d,hist){
       var flowAt=function(yv){ var best=0,bd=1e9; for(var i=0;i<fxs.length;i++){ var dd=Math.abs(yv-fxs[i]); if(dd<bd){bd=dd;best=fys[i];} } return bd<=half?best:0; };
       var N=200, yg=[], zg=[], t0=candles[0].t, tN=candles[candles.length-1].t;
       for(var gi=0;gi<N;gi++){ var yv=yLo+(yHi-yLo)*gi/(N-1); yg.push(yv); var zv=flowAt(yv); zg.push([zv,zv]); }
-      traces.unshift({type:'heatmap',x:[t0,tN],y:yg,z:zg,zsmooth:'best',zmin:-mN,zmax:mN,
+      traces.unshift({type:'heatmap',x:[t0,tN],y:yg,z:zg,zsmooth:false,zmin:-mN,zmax:mN,
         showscale:false,hoverinfo:'skip',
         colorscale:[[0,'rgba(255,51,85,0.55)'],[0.42,'rgba(255,51,85,0.10)'],[0.5,'rgba(10,12,16,0)'],[0.58,'rgba(0,208,132,0.10)'],[1,'rgba(0,208,132,0.55)']]});
       annos.push({xref:'paper',yref:'paper',x:0.012,y:0.90,xanchor:'left',yanchor:'top',
