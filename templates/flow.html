@@ -144,7 +144,7 @@ function draw(d,hist){
   else { layout.uirevision='flow'; Plotly.react('chart',traces,layout,cfg); }
 }
 
-function top(d){
+function renderTop(d){
   var spy=num(d.spot), vix=num(d.vix);
   document.getElementById('t-spy').textContent= spy!=null?('$'+spy.toFixed(2)):'--';
   document.getElementById('t-vix').textContent= vix!=null?vix.toFixed(2):'--';
@@ -162,7 +162,7 @@ function poll(){
     .then(function(r){ if(!r.ok) throw new Error('state HTTP '+r.status); return r.json(); })
     .then(function(d){
       d=d||{};
-      try{ top(d); }catch(e){ console.error('top',e); }
+      try{ renderTop(d); }catch(e){ console.error('renderTop',e); }
       return fetch('/api/history').then(function(r){return r.json();}).catch(function(){return {history:[]};})
         .then(function(h){ try{ draw(d,(h&&h.history)||[]); }catch(e){
           console.error('draw',e);
