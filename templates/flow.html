@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>HEATSEEKER — Chart + GEX Money Flow</title>
-<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>window.__plotlyFailed=false;</script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js" onerror="window.__plotlyFailed=true"></script>
 <style>
   :root{ --bg:#0a0c10; --panel:#0f1219; --border:#1c2030; --green:#00d084; --red:#ff3355;
     --blue:#4488ff; --yellow:#f5c842; --muted:#4a5470; --text:#c8ccd8;
@@ -38,9 +39,13 @@
 <div id="ph">Loading chart + GEX money flow…</div>
 
 <script>
+// Heartbeat: prove the inline script is executing. If the page stays on the
+// static "Loading…" text, this line never ran (script blocked / not deployed).
+(function(){ var p=document.getElementById('ph'); if(p) p.textContent='Starting… fetching data'; })();
 var C={bg:'#0a0c10',green:'#00d084',red:'#ff3355',blue:'#4488ff',yellow:'#f5c842',muted:'#4a5470',text:'#c8ccd8',orange:'#ff8c42'};
 var inited=false;
 function num(v){return (v==null||isNaN(v))?null:+v;}
+function plotlyReady(){ return typeof Plotly!=='undefined' && !window.__plotlyFailed; }
 
 function regime(d){
   var net=num(d.net_gex_total), spot=num(d.spot), flip=num(d.gamma_flip);
@@ -53,6 +58,7 @@ function regime(d){
 
 function draw(d,hist){
   var ph=document.getElementById('ph');
+  if(window.__plotlyFailed){ ph.style.display='block'; ph.innerHTML='Chart library blocked by the network.<br><span style="font-size:10px">cdn.plot.ly is not reachable from this deployment</span>'; return; }
   if(typeof Plotly==='undefined'){ ph.style.display='block'; ph.textContent='Chart library still loading… (retrying)'; return; }
   var spot=num(d.spot), candles=d.candles||[], gex=(d.gex_by_strike||[]).slice();
   if(!candles.length && !gex.length){
