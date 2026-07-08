@@ -660,25 +660,62 @@ function renderCockpit(d){
   document.getElementById('rk-risk').textContent= qty>0? ('−$'+(cost*qty*0.5).toFixed(0)) : '—';
   document.getElementById('rk-rew').textContent= qty>0? ('+$'+(cost*qty*1.0).toFixed(0)) : '—';
 
-  // ── Trade ticket ──
-  var side=(d.direction||'').toLowerCase();
+  // ── Trade ticket — OI-wall + volume strategy ──
+  // Large OI walls are the mean-reversion levels: buy the DIP at the put wall
+  // (heavy put OI = support), short the RIP at the call wall (heavy call OI =
+  // resistance). Between the walls, lean with where volume + OI concentrate.
+  var cw=d.call_wall, pw=d.put_wall, ladder=d.gex_by_strike||[];
+  var callOI=0, putOI=0;
+  ladder.forEach(function(s){ callOI+=s.call_oi||0; putOI+=s.put_oi||0; });
+  var oiBull=(callOI+putOI)>0 ? callOI/(callOI+putOI) : 0.5;
+  var cvt=d.call_vol_total||0, pvt=d.put_vol_total||0;
+  var volBull=(cvt+pvt)>0 ? cvt/(cvt+pvt) : 0.5;
+  var wallNear = spot? Math.max(1.5, spot*0.0035) : 2;         // "at the wall" band
+
+  var setup='', side='', setupNote='';
+  if(pw && spot && spot<=pw+wallNear && spot>=pw-wallNear){
+    setup='BUY DIP'; side='call';
+    setupNote='At put-wall support $'+Math.round(pw)+' (heavy put OI) — dip-buy the bounce';
+  } else if(cw && spot && spot>=cw-wallNear && spot<=cw+wallNear){
+    setup='SHORT RIP'; side='put';
+    setupNote='At call-wall resistance $'+Math.round(cw)+' (heavy call OI) — fade the rip';
+  } else {
+    var score=volBull*0.6 + oiBull*0.4;                        // vol-weighted blend
+    side = score>=0.55?'call':score<=0.45?'put':'';
+    setup = side? 'VOL+OI LEAN' : '';
+    setupNote = side
+      ? ('Volume '+Math.round(volBull*100)+'% calls · OI '+Math.round(oiBull*100)+'% calls → lean '+(side==='call'?'up':'down'))
+      : 'Mid-range · no clear vol+OI lean — wait for a wall';
+  }
+  var call=side==='call';
+
   var reqMove= atmPrem/0.45;                                   // ~SPY pts to double
   var expMove= spot? spot*(vix/100)*Math.sqrt(hrs/(6.5*252)) : 1;
   var ratio= expMove>0? reqMove/expMove : 9;
   var pBase= Math.min(0.95, 2*(1-_normCdf(ratio)));
   var forA=[], agA=[], adj=1;
-  var call=side==='call';
-  if(prev&&spot){
-    if(call&&spot>prev){adj*=1.10;forA.push('with the up-day');}
-    else if(!call&&spot<prev){adj*=1.10;forA.push('with the down-day');}
-    else if(call&&spot<prev-0.5){adj*=0.90;agA.push('fighting a down-day');}
-    else if(!call&&spot>prev+0.5){adj*=0.90;agA.push('fighting an up-day');}
+  // wall setup is the primary edge
+  if(setup==='BUY DIP'){ adj*=1.15; forA.push('put-wall support (heavy OI)'); }
+  else if(setup==='SHORT RIP'){ adj*=1.15; forA.push('call-wall resistance (heavy OI)'); }
+  // volume flow agreement
+  if(side){
+    if(call && volBull>=0.55){adj*=1.10;forA.push('volume buying calls');}
+    else if(call && volBull<=0.45){adj*=0.88;agA.push('volume in puts');}
+    else if(!call && volBull<=0.45){adj*=1.10;forA.push('volume buying puts');}
+    else if(!call && volBull>=0.55){adj*=0.88;agA.push('volume in calls');}
   }
-  if(d.spx_confirm==='ALIGNED'){adj*=1.12;forA.push('SPX confirms');}
-  else if(d.spx_confirm==='DIVERGENT'){adj*=0.82;agA.push('SPX diverges');}
-  if(flip&&spot){ if(call&&spot<flip){adj*=0.80;agA.push('calls below flip');} if(!call&&spot<flip){adj*=1.05;forA.push('puts ride neg-γ');} }
-  if(call&&d.call_wall&&(d.call_wall-spot)<reqMove*0.75){adj*=0.85;agA.push('call wall caps it');}
-  if(!call&&d.put_wall&&(spot-d.put_wall)<reqMove*0.75){adj*=0.85;agA.push('put wall caps it');}
+  // OI agreement
+  if(side){
+    if(call && oiBull>=0.55) forA.push('OI leans calls');
+    else if(!call && oiBull<=0.45) forA.push('OI leans puts');
+  }
+  // day momentum
+  if(prev&&spot){
+    if(call&&spot>prev){adj*=1.06;forA.push('with the up-day');}
+    else if(!call&&spot<prev){adj*=1.06;forA.push('with the down-day');}
+  }
+  if(d.spx_confirm==='ALIGNED'){adj*=1.10;forA.push('SPX confirms');}
+  else if(d.spx_confirm==='DIVERGENT'){adj*=0.85;agA.push('SPX diverges');}
   var prob= Math.max(0, Math.min(0.95, pBase*adj));
 
   var sess=(d.bot_phase||''), marketOpen = spot && (sess!=='closed' && sess!=='premarket');
@@ -691,8 +728,8 @@ function renderCockpit(d){
     card.className='cp '+(call?'buy':'sell');
     sideEl.textContent=call?'LONG CALL':'LONG PUT'; sideEl.className='tk-side '+side;
     document.getElementById('tk-strike').textContent='$'+strike+' · 0DTE';
-    document.getElementById('tk-sub').textContent=(call?'Bet up':'Bet down')+' — near-ATM contract';
-    badge.textContent=call?'BUY CALL':'BUY PUT'; badge.className='badge '+(call?'buy':'sell');
+    document.getElementById('tk-sub').textContent=setupNote;
+    badge.textContent=setup||(call?'BUY CALL':'BUY PUT'); badge.className='badge '+(call?'buy':'sell');
     document.getElementById('tk-entry').textContent='$'+atmPrem.toFixed(2);
     document.getElementById('tk-stop').textContent='$'+(atmPrem*0.5).toFixed(2);
     document.getElementById('tk-tgt').textContent='$'+(atmPrem*2).toFixed(2);
@@ -709,9 +746,9 @@ function renderCockpit(d){
     sideEl.textContent= marketOpen? 'WAIT':'CLOSED'; sideEl.className='tk-side wait';
     document.getElementById('tk-strike').textContent='';
     var reason = !marketOpen ? 'Market closed — no live setup.'
-      : (side!=='call'&&side!=='put') ? 'No clear directional edge right now.'
-      : !feasible ? ('Target needs '+ratio.toFixed(1)+'σ — too far to reach in '+hrs.toFixed(1)+'h.')
-      : ('Conviction '+Math.round(prob*100)+'% < 38% — '+(agA.join(' · ')||'edge too thin')+'.');
+      : (side!=='call'&&side!=='put') ? setupNote
+      : !feasible ? (setup+' but target needs '+ratio.toFixed(1)+'σ — too far in '+hrs.toFixed(1)+'h.')
+      : (setup+' · conviction '+Math.round(prob*100)+'% < 38% — '+(agA.join(' · ')||'edge too thin')+'.');
     document.getElementById('tk-sub').textContent=reason;
     badge.textContent='WAIT'; badge.className='badge wait';
     legs.style.display='none'; conv.style.display='none';
@@ -1250,8 +1287,10 @@ function renderFlowChart(d){
   var shapes=[], annos=[], items=[];
   if(spot)shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:spot,y1:spot,line:{color:'#fff',width:1.5,dash:'dash'}});
   if(d.gamma_flip){shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.gamma_flip,y1:d.gamma_flip,line:{color:C.yellow,width:1,dash:'dot'}}); items.push({y:d.gamma_flip,c:C.yellow,text:(mob?'FLIP ':'γ FLIP ')+Math.round(d.gamma_flip)});}
-  if(d.call_wall)items.push({y:d.call_wall,c:C.green,text:(mob?'CW ':'CALL WALL ')+Math.round(d.call_wall)});
-  if(d.put_wall)items.push({y:d.put_wall,c:C.red,text:(mob?'PW ':'PUT WALL ')+Math.round(d.put_wall)});
+  // Large-OI walls = the mean-reversion zones: short the rip at the call wall,
+  // buy the dip at the put wall.
+  if(d.call_wall){shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.call_wall,y1:d.call_wall,line:{color:C.red,width:1,dash:'dot'}}); items.push({y:d.call_wall,c:C.red,text:(mob?'RIP↓ CW ':'⬇ SHORT-RIP · CALL WALL ')+Math.round(d.call_wall)});}
+  if(d.put_wall){shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.put_wall,y1:d.put_wall,line:{color:C.green,width:1,dash:'dot'}}); items.push({y:d.put_wall,c:C.green,text:(mob?'DIP↑ PW ':'⬆ BUY-DIP · PUT WALL ')+Math.round(d.put_wall)});}
 
   // ── SIGNALS: the strikes money is piling into ──
   var maxCall=null,maxPut=null;
